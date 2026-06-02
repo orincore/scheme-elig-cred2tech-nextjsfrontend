@@ -182,7 +182,7 @@ export default function AgentDashboardPage() {
                   </p>
                 </div>
                 <Link
-                  href={`/agent/dashboard/cases/${c.id}`}
+                  href={`/agent/dashboard/cases/${encodeURIComponent(c.case_number || c.caseNumber || c.id)}`}
                   className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors shrink-0"
                 >
                   View <ArrowRight className="h-3 w-3" />

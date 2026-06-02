@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import { adminAuthApi } from '@/lib/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Users, Search, Filter, CheckCircle, XCircle, UserCheck, Ban, ExternalLink } from 'lucide-react';
+import { Users, Search, Filter, CheckCircle, XCircle, UserCheck, Ban, ExternalLink, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STATUS_OPTIONS = [
@@ -24,18 +25,82 @@ const STATUS_OPTIONS = [
 const PILL = 'inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full';
 
 function StatusBadge({ agent }: { agent: any }) {
-  // Approval gates first.
   if (agent.approvalStatus === 'PENDING')
-    return <span className={`${PILL} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300`}>Pending</span>;
+    return <span className={`${PILL} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300`}>Pending Approval</span>;
   if (agent.approvalStatus === 'REJECTED')
     return <span className={`${PILL} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300`}>Rejected</span>;
-  // Approved agents: blocked/suspended override; everything else (incl. the
-  // internal status='PENDING' that approval leaves behind) is simply "Active".
   if (agent.status === 'BLOCKED')
     return <span className={`${PILL} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300`}>Blocked</span>;
   if (agent.status === 'SUSPENDED')
     return <span className={`${PILL} bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300`}>Suspended</span>;
-  return <span className={`${PILL} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300`}>Active</span>;
+  return null; // approved & active — show availability instead
+}
+
+const AVAIL_OPTIONS: { value: string; dot: string; cls: string; label: string }[] = [
+  { value: 'AVAILABLE', dot: 'bg-green-500', cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300', label: 'Available' },
+  { value: 'BUSY',      dot: 'bg-amber-500', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', label: 'Busy' },
+  { value: 'OFFLINE',   dot: 'bg-slate-400', cls: 'bg-muted text-muted-foreground',                                       label: 'Offline' },
+  { value: 'ON_LEAVE',  dot: 'bg-blue-500',  cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',    label: 'On Leave' },
+];
+
+function AvailDropdown({ agentId, availability, onChanged }: { agentId: string; availability: string; onChanged: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const cur = AVAIL_OPTIONS.find((o) => o.value === availability) ?? AVAIL_OPTIONS[2];
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const select = async (val: string) => {
+    setOpen(false);
+    if (val === availability) return;
+    setBusy(true);
+    try {
+      await adminAuthApi.updateAgentAvailability(agentId, val);
+      onChanged(val);
+      toast.success(`Status set to ${AVAIL_OPTIONS.find(o => o.value === val)?.label ?? val}`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update availability');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setOpen((o) => !o)}
+        className={`${PILL} ${cur.cls} inline-flex items-center gap-1 hover:opacity-80 transition-opacity disabled:opacity-50 cursor-pointer`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${cur.dot}`} />
+        {cur.label}
+        <svg className="h-2.5 w-2.5 ml-0.5 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 w-36 rounded-md border border-border bg-card shadow-lg z-50 overflow-hidden">
+          {AVAIL_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => select(o.value)}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] hover:bg-muted/50 transition-colors ${o.value === availability ? 'font-bold' : ''}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${o.dot}`} />
+              <span className={o.cls.replace('bg-', 'text-').split(' ')[0]}>{o.label}</span>
+              {o.value === availability && <span className="ml-auto text-[9px] text-primary">✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function AgentsPage() {
@@ -46,6 +111,8 @@ export default function AgentsPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [actionDialog, setActionDialog] = useState<{ open: boolean; type: string; agent: any } | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  // Optimistic availability map: agentId → availability
+  const [availMap, setAvailMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadAgents();
@@ -226,14 +293,16 @@ export default function AgentsPage() {
                         )}
                       </div>
                     </td>
-                    {/* Status */}
+                    {/* Status / Availability */}
                     <td className="px-5 py-4">
-                      <StatusBadge agent={agent} />
-                      {agent.approvedBy && (
-                        <p className="text-[10px] text-muted-foreground/80 mt-1 truncate max-w-[130px]">
-                          {agent.approvalStatus === 'REJECTED' ? 'by ' : 'by '}{agent.approvedBy}
-                        </p>
-                      )}
+                      {agent.approvalStatus === 'APPROVED' && agent.status !== 'BLOCKED' && agent.status !== 'SUSPENDED'
+                        ? <AvailDropdown
+                            agentId={String(agent.id)}
+                            availability={availMap[agent.id] ?? agent.availability ?? 'OFFLINE'}
+                            onChanged={(v) => setAvailMap((m) => ({ ...m, [agent.id]: v }))}
+                          />
+                        : <StatusBadge agent={agent} />
+                      }
                     </td>
                     {/* Joined */}
                     <td className="px-5 py-4">

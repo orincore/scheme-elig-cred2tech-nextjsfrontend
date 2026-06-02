@@ -124,6 +124,9 @@ export const agentAuthApi = {
     body: JSON.stringify({ currentPassword, newPassword }),
   }, 'agent'),
 
+  clearAvailabilityLog: () =>
+    fetchApi('/api/agent-auth/availability-log', { method: 'DELETE' }, 'agent'),
+
   getAvailabilityLog: (params?: { from?: string; to?: string }) => {
     const clean = Object.entries(params || {})
       .filter(([, v]) => v)
@@ -172,6 +175,11 @@ export const adminAuthApi = {
   updateAgentStatus: (agentId: string, action: string, reason?: string) => fetchApi(`/api/admin-auth/agents/${agentId}/status`, {
     method: 'PUT',
     body: JSON.stringify({ action, reason }),
+  }, 'admin'),
+
+  updateAgentAvailability: (agentId: string, availability: string) => fetchApi(`/api/admin-auth/agents/${agentId}/availability`, {
+    method: 'PUT',
+    body: JSON.stringify({ availability }),
   }, 'admin'),
 
   // ── AI usage & cost monitoring ──

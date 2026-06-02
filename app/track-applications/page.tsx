@@ -329,16 +329,8 @@ export default function TrackApplicationsPage() {
               <Button size="sm" onClick={() => router.push('/dashboard')}>Browse Schemes</Button>
             </div>
           ) : (
-            <div className="overflow-auto">
+            <div className="overflow-auto w-full">
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
-                <colgroup>
-                  <col style={{ width: '24%' }} />
-                  <col style={{ width: '16%' }} />
-                  <col style={{ width: '13%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '15%' }} />
-                  <col style={{ width: '22%' }} />
-                </colgroup>
                 <thead>
                   <tr className="bg-background border-b-2 border-border">
                     {['Scheme / Case #', 'Business', 'Status', 'Applied · Agent', 'Actions'].map((h) => (

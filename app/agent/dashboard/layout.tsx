@@ -88,6 +88,10 @@ export default function AgentDashboardLayout({
       await agentAuthApi.updateProfile({ availability: val });
       setAvailability(val);
       toast.success(`Status set to ${AVAIL_CFG[val]?.label ?? val}`);
+      // Notify the calendar page so its live timer updates without a reload
+      window.dispatchEvent(new CustomEvent('aux-changed', {
+        detail: { status: val, changedAt: new Date().toISOString() },
+      }));
     } catch (e: any) {
       toast.error(e?.message || 'Failed to update status');
     } finally {

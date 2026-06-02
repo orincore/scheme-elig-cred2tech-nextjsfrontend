@@ -126,7 +126,7 @@ export default function AgentHistoryPage() {
                     ) : null}
                   </div>
                   <Link
-                    href={`/agent/dashboard/cases/${c.id}`}
+                    href={`/agent/dashboard/cases/${encodeURIComponent(c.case_number || c.caseNumber || c.id)}`}
                     className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
                   >
                     View <ArrowRight className="h-3 w-3" />
