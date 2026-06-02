@@ -5,18 +5,15 @@ import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { useSchemes } from '@/contexts/SchemesContext';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import SchemeSearch from '@/components/dashboard/SchemeSearch';
-import SchemesList from '@/components/dashboard/SchemesList';
+import EligibilityDashboard from '@/components/dashboard/EligibilityDashboard';
 import MissingProfileModal from '@/components/dashboard/MissingProfileModal';
 import CompleteProfileModal from '@/components/dashboard/CompleteProfileModal';
-import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
 export default function DashboardPage() {
-  const { authStep, token, mobile, userProfile } = useMsmeAuth();
-  const { loadSchemesForDashboard, refreshSchemes, isLoading } = useSchemes();
+  const { authStep, token, mobile, userProfile, refreshBusinesses } = useMsmeAuth();
+  const { loadSchemesForDashboard } = useSchemes();
   const router = useRouter();
   const [showCompleteProfile, setShowCompleteProfile] = useState(false);
   const [profileName, setProfileName] = useState('');
@@ -30,7 +27,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (authStep === 'authenticated') {
-      loadSchemesForDashboard();
+      // Make sure the active business is known (persisted to sessionStorage)
+      // before loading/analyzing, so results are scoped to the right business.
+      refreshBusinesses().finally(() => loadSchemesForDashboard());
     }
   }, [authStep]);
 
@@ -57,32 +56,13 @@ export default function DashboardPage() {
     checkProfile();
   }, [authStep, token, mobile, userProfile]);
 
-  const handleRefresh = () => {
-    refreshSchemes();
-  };
-
   if (authStep !== 'authenticated') {
     return null;
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-8">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <Button
-            onClick={handleRefresh}
-            disabled={isLoading}
-            variant="outline"
-            className="border-border text-muted-foreground hover:text-primary hover:border-primary"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh Schemes
-          </Button>
-        </div>
-        <SchemeSearch />
-        <SchemesList />
-      </div>
+      <EligibilityDashboard />
       <MissingProfileModal />
       {showCompleteProfile && token && (
         <CompleteProfileModal

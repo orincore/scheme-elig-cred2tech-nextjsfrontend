@@ -4,85 +4,334 @@ import { useState, useEffect } from 'react';
 import { useSchemes } from '@/contexts/SchemesContext';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { Scheme } from '@/contexts/SchemesContext';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Bookmark, BookmarkCheck, ExternalLink, ChevronLeft, Check, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
+import {
+  Bookmark, BookmarkCheck, ExternalLink, ChevronLeft,
+  Check, Loader2, Sparkles, ChevronDown, ChevronUp,
+  FileText, Shield, Star, ListOrdered, HelpCircle, Link2,
+} from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { casesApi } from '@/lib/services/api';
 
-export default function SchemeDetails({ scheme }: { scheme: Scheme }) {
-  const { saveScheme, removeSavedScheme, savedSchemes, getSchemeDetailBySlug, getSchemeDocuments, getSchemeFaqs, getSchemeApplicationProcess } = useSchemes();
-  const { userProfile, existingProfile, userId, authStep } = useMsmeAuth();
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    benefits: true,
-    eligibility: true,
-    documents: true,
-    process: true,
-    faqs: true,
-    description: true,
-    references: true,
-  });
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [schemeDetail, setSchemeDetail] = useState<any>(null);
-  const [documents, setDocuments] = useState<string[]>([]);
-  const [faqs, setFaqs] = useState<any[]>([]);
-  const [applicationProcess, setApplicationProcess] = useState<string | null>(null);
-  const [detailFetched, setDetailFetched] = useState(false);
-  const [isCreatingCase, setIsCreatingCase] = useState(false);
-  const [isApplied, setIsApplied] = useState(false);
+// ── Text helpers ──────────────────────────────────────────────────────────────
 
-  // Eligibility check state
-  const [eligibilitySummary, setEligibilitySummary] = useState<string | null>(null);
-  const [eligibilityLoading, setEligibilityLoading] = useState(false);
-  const [eligibilityCached, setEligibilityCached] = useState(false);
-  const [recommendations, setRecommendations] = useState<any[]>([]);
-  const [completedTasks, setCompletedTasks] = useState<string[]>([]);
-  const [markingTask, setMarkingTask] = useState<string | null>(null);
-  const [taskInputValues, setTaskInputValues] = useState<Record<string, string>>({});
-  const [updatingField, setUpdatingField] = useState<string | null>(null);
+/**
+ * Decode HTML entities in two passes so double-encoded strings
+ * (e.g. &amp;#39; → &#39; → ') are also handled correctly.
+ */
+function decodeHtml(raw: string): string {
+  if (!raw) return raw;
+
+  // Pass 1: collapse one level of &amp; encoding so &amp;#39; → &#39;, &amp;quot; → &quot; etc.
+  let s = raw.replace(/&amp;/g, '&');
+
+  // Pass 2: all named and numeric entities
+  s = s
+    // Quotes / apostrophes
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lsquo;/g, '‘')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&ldquo;/g, '“')
+    .replace(/&rdquo;/g, '”')
+    // Punctuation
+    .replace(/&ndash;/g, '–')
+    .replace(/&mdash;/g, '—')
+    .replace(/&hellip;/g, '…')
+    .replace(/&bull;/g, '•')
+    .replace(/&middot;/g, '·')
+    // Comparators
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&le;/g, '≤')
+    .replace(/&ge;/g, '≥')
+    .replace(/&ne;/g, '≠')
+    // Maths / symbols
+    .replace(/&times;/g, '×')
+    .replace(/&divide;/g, '÷')
+    .replace(/&plusmn;/g, '±')
+    .replace(/&deg;/g, '°')
+    .replace(/&frac12;/g, '½')
+    .replace(/&frac14;/g, '¼')
+    .replace(/&frac34;/g, '¾')
+    // Intellectual property
+    .replace(/&trade;/g, '™')
+    .replace(/&reg;/g, '®')
+    .replace(/&copy;/g, '©')
+    // Arrows
+    .replace(/&rarr;/g, '→')
+    .replace(/&larr;/g, '←')
+    .replace(/&uarr;/g, '↑')
+    .replace(/&darr;/g, '↓')
+    // Whitespace
+    .replace(/&nbsp;/g, ' ')
+    // Decimal numeric entities  &#NNN;
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    // Hex numeric entities  &#xHH;
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    // Collapse multiple spaces from &nbsp; runs
+    .replace(/ {2,}/g, ' ');
+
+  return s;
+}
+
+function cleanMarkdown(text: string): string {
+  if (!text) return text;
+  return decodeHtml(text)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')           // strip any remaining HTML tags
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+    .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+type MdBlock = { type: 'heading'; text: string } | { type: 'item'; text: string };
+
+function parseMarkdownBlocks(text: string): MdBlock[] {
+  if (!text) return [];
+  return decodeHtml(text)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')           // strip HTML tags
+    .split('\n')
+    .map((line: string): MdBlock | null => {
+      const trimmed = line.trim();
+      if (!trimmed) return null;
+      const isHeading =
+        /^#{1,6}\s/.test(trimmed) ||
+        /^\*{2,3}[^*\n]+\*{2,3}$/.test(trimmed) ||
+        /^#{1,6}\s*\*{2,3}[^*\n]+\*{2,3}$/.test(trimmed);
+      const clean = trimmed
+        .replace(/^#{1,6}\s*/g, '')
+        .replace(/^[\s•\-]+/, '')
+        .replace(/^\d+\.\s+/, '')
+        .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+        .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
+        .trim();
+      if (!clean || clean.length < 2) return null;
+      return { type: isHeading ? 'heading' : 'item', text: clean };
+    })
+    .filter((b): b is MdBlock => b !== null);
+}
+
+// ── Eligibility parser ────────────────────────────────────────────────────────
+
+type EligBlock =
+  | { kind: 'heading'; text: string }
+  | { kind: 'item';    text: string }
+  | { kind: 'note';    label: string; text: string };
+
+function stripInlineMarkdown(s: string): string {
+  return s
+    .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+    .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .trim();
+}
+
+function parseEligibilityText(raw: string): EligBlock[] {
+  if (!raw?.trim()) return [];
+
+  const text = decodeHtml(raw)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+
+  const blocks: EligBlock[] = [];
+
+  // Process each line independently (most items are single-line blobs)
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    // Extract a leading heading marker (##### heading text)
+    let rest = line;
+    const headingMatch = line.match(/^#{1,6}\s+(.+)/);
+    if (headingMatch) {
+      const afterHash = headingMatch[1];
+      // The heading may run into list items inline: "Eligible borrowers - Individuals - ..."
+      const firstDash = afterHash.indexOf(' - ');
+      if (firstDash === -1) {
+        // Pure heading with no list items after it
+        const hText = stripInlineMarkdown(afterHash);
+        if (hText) blocks.push({ kind: 'heading', text: hText });
+        continue;
+      }
+      // Heading + inline list items
+      const hText = stripInlineMarkdown(afterHash.slice(0, firstDash));
+      if (hText) blocks.push({ kind: 'heading', text: hText });
+      rest = afterHash.slice(firstDash + 3);
+    }
+
+    // Split remaining text on **Note (notes come after the list items)
+    const noteSplit = rest.split(/(?=\*{1,2}Note)/i);
+
+    // ── List items (first segment)
+    if (noteSplit[0]) {
+      // Items are separated by " - " (dash-space pattern)
+      const rawItems = noteSplit[0]
+        .split(/ - (?=[A-Z])/g)   // split on " - Uppercase" to avoid splitting mid-sentence
+        .flatMap(seg => seg.split(/ - /))  // then split remaining
+        .map(s => s.trim())
+        .filter(s => s.length > 1);
+
+      for (const item of rawItems) {
+        const cleaned = stripInlineMarkdown(
+          item.replace(/^[-•]\s*/, '').replace(/^\d+\.\s+/, '')
+        );
+        if (cleaned.length > 1) blocks.push({ kind: 'item', text: cleaned });
+      }
+    }
+
+    // ── Notes (**Note 01:** text...)
+    for (let i = 1; i < noteSplit.length; i++) {
+      const seg = noteSplit[i];
+      // Match **Note XX:** or **Note:** patterns
+      const m = seg.match(/^\*{1,2}(Note\s*[\d]*)\s*:?\s*\*{1,2}:?\s*([\s\S]+)/i);
+      if (m) {
+        const label = m[1].trim();
+        const noteText = stripInlineMarkdown(m[2].trim());
+        if (noteText) blocks.push({ kind: 'note', label, text: noteText });
+      } else {
+        const cleaned = stripInlineMarkdown(seg.replace(/^[-•]\s*/, '').trim());
+        if (cleaned.length > 1) blocks.push({ kind: 'item', text: cleaned });
+      }
+    }
+  }
+
+  return blocks;
+}
+
+// Render a single eligibility criterion (may be simple or complex)
+function EligibilityItem({ criterion }: { criterion: string }) {
+  const blocks = parseEligibilityText(criterion);
+
+  // Simple single-item — render as a regular check-list row
+  if (blocks.length === 1 && blocks[0].kind === 'item') {
+    return (
+      <li className="flex gap-3 items-start">
+        <span className="w-5 h-5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 flex items-center justify-center shrink-0 mt-0.5">
+          <svg viewBox="0 0 12 12" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="2 6 5 9 10 3"/></svg>
+        </span>
+        <span className="text-sm text-foreground leading-relaxed">{blocks[0].text}</span>
+      </li>
+    );
+  }
+
+  // Complex block — render with hierarchy
+  return (
+    <li className="space-y-2 pb-2 border-b border-border last:border-0 last:pb-0">
+      {blocks.map((b, i) => {
+        if (b.kind === 'heading') {
+          return (
+            <p key={i} className="text-[11px] font-extrabold text-muted-foreground uppercase tracking-[0.08em] mt-2 first:mt-0">
+              {b.text}
+            </p>
+          );
+        }
+        if (b.kind === 'item') {
+          return (
+            <div key={i} className="flex gap-2.5 items-start pl-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary/50 shrink-0 mt-[7px]" />
+              <span className="text-sm text-foreground leading-relaxed">{b.text}</span>
+            </div>
+          );
+        }
+        if (b.kind === 'note') {
+          return (
+            <div key={i} className="mt-2 flex gap-2 items-start pl-1 py-2 border-l-2 border-amber-400/60 bg-amber-50/50 dark:bg-amber-900/10 px-3">
+              <div className="min-w-0">
+                <span className="text-[10px] font-extrabold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                  {b.label}:{' '}
+                </span>
+                <span className="text-xs text-foreground/80 leading-relaxed">{b.text}</span>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </li>
+  );
+}
+
+// ── Section component ─────────────────────────────────────────────────────────
+
+function Section({
+  title, icon: Icon, expanded, onToggle, children,
+}: {
+  title: string; icon: React.ElementType;
+  expanded: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-none overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-5 py-4 border-b border-border bg-background hover:bg-muted/30 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          <span className="text-[13px] font-bold text-foreground">{title}</span>
+        </div>
+        {expanded
+          ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+      </button>
+      {expanded && <div className="px-5 py-4">{children}</div>}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function SchemeDetails({ scheme }: { scheme: Scheme }) {
+  const {
+    saveScheme, removeSavedScheme, savedSchemes,
+    getSchemeDetailBySlug, getSchemeDocuments, getSchemeFaqs, getSchemeApplicationProcess,
+  } = useSchemes();
+  const { userProfile, existingProfile, userId } = useMsmeAuth();
+
+  const [saveAnim, setSaveAnim] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    description: true, eligibility: true, benefits: true,
+    documents: true, process: true, faqs: false, references: false,
+  });
+  const [detailLoading, setDetailLoading]   = useState(false);
+  const [schemeDetail, setSchemeDetail]     = useState<any>(null);
+  const [documents, setDocuments]           = useState<string[]>([]);
+  const [faqs, setFaqs]                     = useState<any[]>([]);
+  const [applicationProcess, setApplicationProcess] = useState<string | null>(null);
+  const [detailFetched, setDetailFetched]   = useState(false);
+  const [isCreatingCase, setIsCreatingCase] = useState(false);
+  const [isApplied, setIsApplied]           = useState(false);
 
   const isSaved = savedSchemes.some((s) => s.id === scheme.id);
 
+  // Check existing application
   useEffect(() => {
-    // Check if this scheme was already applied from localStorage
-    const appliedState = localStorage.getItem(`applied_scheme_${scheme.id}`);
-    console.log('Applied state from localStorage:', appliedState, 'for scheme:', scheme.id);
-    if (appliedState === 'true') {
+    if (localStorage.getItem(`applied_scheme_${scheme.id}`) === 'true') {
       setIsApplied(true);
     }
-
-    // Also check with backend if user has already applied for this scheme
-    const checkExistingApplication = async () => {
+    const check = async () => {
       try {
         const msmeUserId = userId ? parseInt(userId) : null;
         if (!msmeUserId) return;
-        
-        const response = await casesApi.getMsmeCases(msmeUserId);
-        if (response.success && response.cases) {
-          const existingApplication = response.cases.find(
-            (caseItem: any) => caseItem.schemeId === scheme.id
-          );
-          if (existingApplication) {
-            console.log('Found existing application for this scheme:', existingApplication);
-            setIsApplied(true);
-            localStorage.setItem(`applied_scheme_${scheme.id}`, 'true');
-          }
+        const res = await casesApi.getMsmeCases(msmeUserId);
+        if (res.success && res.cases?.find((c: any) => c.schemeId === scheme.id)) {
+          setIsApplied(true);
+          localStorage.setItem(`applied_scheme_${scheme.id}`, 'true');
         }
-      } catch (error) {
-        console.error('Error checking existing applications:', error);
-      }
+      } catch {}
     };
+    check();
+  }, [scheme.id, userId]);
 
-    checkExistingApplication();
-  }, [scheme.id]);
-
+  // Fetch scheme details
   useEffect(() => {
     if (!scheme.slug || detailFetched) return;
     setDetailFetched(true);
     setDetailLoading(true);
-    const fetchDetails = async () => {
+    (async () => {
       try {
         const detail = await getSchemeDetailBySlug(scheme.slug);
         if (detail?._id) {
@@ -101,789 +350,430 @@ export default function SchemeDetails({ scheme }: { scheme: Scheme }) {
       } finally {
         setDetailLoading(false);
       }
-    };
-    fetchDetails();
+    })();
   }, [scheme.slug, detailFetched]);
 
-  // Eligibility check effect
-  useEffect(() => {
-    const fetchEligibility = async () => {
-      if (!userId || !scheme.id) return;
-      
-      setEligibilityLoading(true);
-      try {
-        const response = await casesApi.checkEligibility(scheme.id, parseInt(userId), completedTasks);
-        if (response.success) {
-          setEligibilitySummary(response.summary);
-          setEligibilityCached(response.cached || false);
-          setRecommendations(response.recommendations || []);
-          setCompletedTasks(response.completedTasks || []);
-        }
-      } catch (err: any) {
-        console.error('Error fetching eligibility:', err);
-        // Don't show error toast - eligibility check is optional
-      } finally {
-        setEligibilityLoading(false);
-      }
-    };
-
-    fetchEligibility();
-  }, [scheme.id, userId, completedTasks.length]);
-
-  const handleMarkTaskDone = async (taskId: string) => {
-    if (!userId || !scheme.id) return;
-    setMarkingTask(taskId);
-    try {
-      const response = await casesApi.completeEligibilityTask(scheme.id, parseInt(userId), taskId);
-      if (response.success) {
-        setCompletedTasks(response.completedTasks || []);
-        toast.success('Task marked as completed! Regenerating eligibility analysis...');
-        // Force refresh eligibility with new completed tasks
-        const eligibilityResponse = await casesApi.checkEligibility(scheme.id, parseInt(userId), response.completedTasks);
-        if (eligibilityResponse.success) {
-          setEligibilitySummary(eligibilityResponse.summary);
-          setRecommendations(eligibilityResponse.recommendations || []);
-          setEligibilityCached(eligibilityResponse.cached || false);
-        }
-      }
-    } catch (err: any) {
-      toast.error('Failed to mark task as done. Please try again.');
-    } finally {
-      setMarkingTask(null);
-    }
+  const handleSave = () => {
+    setSaveAnim(true);
+    setTimeout(() => setSaveAnim(false), 500);
+    if (isSaved) { removeSavedScheme(scheme.id); toast.success('Scheme removed from saved'); }
+    else { saveScheme([scheme]); toast.success('Scheme saved!'); }
   };
 
-  const handleUpdateProfileField = async (taskId: string, field: string, value: any) => {
-    if (!userId || !scheme.id || !value) return;
-    setUpdatingField(taskId);
-    try {
-      // Update the profile field
-      const updateResponse = await casesApi.updateProfileField(parseInt(userId), field, value);
-      if (updateResponse.success) {
-        toast.success(`${field} updated successfully! Regenerating eligibility analysis...`);
-        // Mark task as done and refresh
-        const completeResponse = await casesApi.completeEligibilityTask(scheme.id, parseInt(userId), taskId);
-        if (completeResponse.success) {
-          setCompletedTasks(completeResponse.completedTasks || []);
-          // Refresh eligibility
-          const eligibilityResponse = await casesApi.checkEligibility(scheme.id, parseInt(userId), completeResponse.completedTasks);
-          if (eligibilityResponse.success) {
-            setEligibilitySummary(eligibilityResponse.summary);
-            setRecommendations(eligibilityResponse.recommendations || []);
-            setEligibilityCached(eligibilityResponse.cached || false);
-          }
-        }
-      }
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update field. Please try again.');
-    } finally {
-      setUpdatingField(null);
-      setTaskInputValues(prev => ({ ...prev, [taskId]: '' }));
-    }
-  };
-
-  const handleSaveScheme = () => {
-    if (isSaved) {
-      removeSavedScheme(scheme.id);
-      toast.success('Scheme removed from saved');
-    } else {
-      saveScheme([scheme]);
-      toast.success('Scheme saved successfully');
-    }
-  };
-
-  const handleApplyNow = async () => {
-    console.log('Apply Now clicked');
-    console.log('Auth Step:', authStep);
-    console.log('User ID:', userId);
-    console.log('Existing Profile:', existingProfile);
-    console.log('User Profile:', userProfile);
-    console.log('Scheme:', scheme);
-
+  const handleApply = async () => {
     if (!userId && !existingProfile && !userProfile) {
-      console.error('No user found - not authenticated');
       toast.error('Please login to apply for this scheme');
       return;
     }
+    const msmeUserId = userId ? parseInt(userId) : null;
+    if (!msmeUserId) { toast.error('Invalid user information. Please login again.'); return; }
 
     setIsCreatingCase(true);
     try {
-      // Convert userId to number as required by backend
-      const msmeUserId = userId ? parseInt(userId) : null;
-      
-      if (!msmeUserId) {
-        console.error('Invalid user ID');
-        toast.error('Invalid user information. Please login again.');
-        return;
-      }
+      const businessName =
+        existingProfile?.legalNameOfBusiness ||
+        existingProfile?.tradeNameOfBusiness ||
+        userProfile?.name || 'Unknown Business';
 
-      // Get business name from available data sources
-      const businessName = existingProfile?.legalNameOfBusiness || 
-                          existingProfile?.tradeNameOfBusiness || 
-                          userProfile?.name || 
-                          'Unknown Business';
-
-      console.log('Creating case with data:', {
+      const res = await casesApi.createCase({
         msmeUserId,
         schemeId: scheme.id,
         schemeName: scheme.schemeName,
-        applicationData: {
-          businessName,
-          description: scheme.briefDescription,
-          existingProfile,
-        },
+        applicationData: { businessName, description: scheme.briefDescription, existingProfile },
       });
 
-      const response = await casesApi.createCase({
-        msmeUserId,
-        schemeId: scheme.id,
-        schemeName: scheme.schemeName,
-        applicationData: {
-          businessName,
-          description: scheme.briefDescription,
-          existingProfile,
-        },
-      });
-
-      console.log('API response:', response);
-
-      if (response.success || response.case) {
+      if (res.success || res.case) {
         setIsApplied(true);
-        // Store applied state in localStorage
         localStorage.setItem(`applied_scheme_${scheme.id}`, 'true');
-        toast.success('Your application is received and soon will be allotted to an agent. Please wait for 24 hours.', {
-          duration: 5000,
-        });
+        toast.success('Application received! An agent will be assigned within 24 hours.', { duration: 5000 });
       } else {
-        console.error('API response indicates failure:', response);
-        toast.error('Failed to create case. Please try again.');
+        toast.error('Failed to submit application. Please try again.');
       }
-    } catch (error) {
-      console.error('Error creating case:', error);
-      toast.error('Failed to create case. Please try again.');
+    } catch {
+      toast.error('Failed to submit application. Please try again.');
     } finally {
       setIsCreatingCase(false);
     }
   };
 
-  const toggleSection = (section: string) => {
-    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
-  };
+  const toggle = (id: string) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
-  // Extract rich data from schemeDetail (raw API response)
-  const basicDetails = schemeDetail?.en?.basicDetails || schemeDetail?.en || {};
+  // Derived content
+  const basicDetails  = schemeDetail?.en?.basicDetails || schemeDetail?.en || {};
   const schemeContent = schemeDetail?.en?.schemeContent || schemeDetail?.schemeContent || {};
+  const officialUrl: string =
+    basicDetails?.schemeUrl || basicDetails?.officialWebsite || basicDetails?.websiteUrl ||
+    schemeContent?.references?.[0]?.url || '';
+  const benefitsBlocks   = parseMarkdownBlocks(schemeContent?.benefits_md || schemeContent?.benefits || '');
+  const eligibilityList  = basicDetails?.eligibility || [];
+  const exclusionsBlocks = parseMarkdownBlocks(schemeContent?.exclusions_md || schemeContent?.exclusions || '');
 
-  // Official website URL — MyScheme API returns it under basicDetails.schemeUrl
-  const officialWebsiteUrl: string =
-    basicDetails?.schemeUrl ||
-    basicDetails?.officialWebsite ||
-    basicDetails?.websiteUrl ||
-    schemeContent?.references?.[0]?.url ||
-    '';
-
-  // Strip markdown/HTML artifacts from plain text display
-  const cleanMarkdown = (text: string): string => {
-    return text
-      .replace(/<br\s*\/?>/gi, '')           // <br> tags
-      .replace(/^#{1,6}\s*/gm, '')           // headings: ## ### ####
-      .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1') // bold/italic: **text**, ***text***
-      .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')   // italic/bold: _text_, __text__
-      .replace(/`([^`]+)`/g, '$1')           // inline code
-      .replace(/&amp;quot;/g, '"')
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/\n{3,}/g, '\n\n')            // collapse excess newlines
-      .trim();
-  };
-
-  type MdBlock = { type: 'heading'; text: string } | { type: 'item'; text: string };
-
-  // Parse markdown text into typed blocks: headings (##### ***Heading***) and list items
-  const parseMarkdownBlocks = (text: string): MdBlock[] => {
-    return text
-      .replace(/<br\s*\/?>/gi, '\n')
-      .split('\n')
-      .map((line: string): MdBlock | null => {
-        const trimmed = line.trim();
-        if (!trimmed) return null;
-
-        // Detect heading: line starts with # markers OR is purely ***text*** (no bullet prefix)
-        const isHeading =
-          /^#{1,6}\s/.test(trimmed) ||
-          /^\*{2,3}[^*\n]+\*{2,3}$/.test(trimmed) ||
-          /^#{1,6}\s*\*{2,3}[^*\n]+\*{2,3}$/.test(trimmed);
-
-        const clean = trimmed
-          .replace(/^#{1,6}\s*/g, '')          // strip leading hashes
-          .replace(/^[\s•\-]+/, '')             // strip bullets (but NOT * to avoid stripping bold)
-          .replace(/^\d+\.\s+/, '')             // numbered lists
-          .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1') // bold/italic markers
-          .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
-          .replace(/&amp;/g, '&')
-          .replace(/&quot;/g, '"')
-          .replace(/&amp;quot;/g, '"')
-          .trim();
-
-        if (!clean || clean.length < 2) return null;
-        return { type: isHeading ? 'heading' : 'item', text: clean };
-      })
-      .filter((b): b is MdBlock => b !== null);
-  };
-
-  const benefitsText = schemeContent?.benefits_md || schemeContent?.benefits || '';
-  const benefitsBlocks = parseMarkdownBlocks(benefitsText);
-  // Keep flat list for backwards-compatible usage
-  const benefitsList = benefitsBlocks.filter((b) => b.type === 'item').map((b) => b.text);
-  
-  const eligibilityList = basicDetails?.eligibility || [];
-  
-  const exclusionsText = schemeContent?.exclusions_md || schemeContent?.exclusions || '';
-  const exclusionsList = parseMarkdownBlocks(exclusionsText);
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-secondary/5">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground mb-4">
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Back to Dashboard
-            </Button>
-          </Link>
-          
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-3">
-                {scheme.schemeLevel && (
-                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
-                    {scheme.schemeLevel}
-                  </Badge>
-                )}
-                {scheme.schemeCategory?.length > 0 && scheme.schemeCategory.slice(0, 2).map((cat) => (
-                  <Badge key={cat} variant="outline" className="border-border">
-                    {cat}
-                  </Badge>
-                ))}
-              </div>
-              <h1 className="text-4xl font-bold text-foreground mb-2">{scheme.schemeName}</h1>
-              <p className="text-lg text-muted-foreground">{scheme.nodalMinistryName}</p>
+    <div className="space-y-5">
+
+      {/* ─── Page header ────────────────────────────────────────────────────── */}
+      <div className="border-b-2 border-border pb-5">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors mb-3"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Back to Dashboard
+        </Link>
+
+        <p className="text-[11px] font-bold text-primary uppercase tracking-[0.1em] mb-1">
+          Government Scheme
+        </p>
+
+        <div className="flex items-start justify-between gap-5 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-extrabold tracking-tight text-foreground leading-snug">
+              {decodeHtml(scheme.schemeName)}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">{decodeHtml(scheme.nodalMinistryName)}</p>
+
+            {/* Badges row */}
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              {scheme.schemeLevel && (
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                  {scheme.schemeLevel}
+                </span>
+              )}
+              {scheme.schemeCategory?.slice(0, 2).map((cat) => (
+                <span key={cat} className="text-[10px] font-extrabold uppercase tracking-wider bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                  {cat}
+                </span>
+              ))}
+              {scheme.schemeFor && (
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                  {scheme.schemeFor}
+                </span>
+              )}
             </div>
-            
-            <div className="flex flex-col sm:flex-row gap-3 lg:self-center">
-              <Button
-                onClick={handleSaveScheme}
-                variant={isSaved ? 'default' : 'outline'}
-                className={
-                  isSaved
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                    : 'border-2 border-border hover:border-primary hover:text-primary'
-                }
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleSave}
+              className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md border transition-all ${
+                isSaved
+                  ? 'border-primary/40 text-primary bg-primary/5 hover:bg-primary/10'
+                  : 'border-border text-muted-foreground bg-muted/30 hover:text-foreground hover:border-border/80'
+              }`}
+            >
+              <span className={saveAnim ? 'animate-bookmark-pop' : ''} style={{ display: 'inline-flex' }}>
+                {isSaved ? <BookmarkCheck className="h-3.5 w-3.5" /> : <Bookmark className="h-3.5 w-3.5" />}
+              </span>
+              {isSaved ? 'Saved' : 'Save'}
+            </button>
+            {officialUrl && (
+              <a
+                href={officialUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md border border-border text-muted-foreground bg-muted/30 hover:text-foreground transition-colors"
               >
-                {isSaved ? (
-                  <>
-                    <BookmarkCheck className="w-4 h-4 mr-2" />
-                    Saved
-                  </>
-                ) : (
-                  <>
-                    <Bookmark className="w-4 h-4 mr-2" />
-                    Save
-                  </>
-                )}
-              </Button>
-              <Button
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-                onClick={handleApplyNow}
-                disabled={isCreatingCase || isApplied}
-              >
-                {isApplied ? (
-                  <>
-                    <Check className="w-4 h-4 mr-2" />
-                    Applied
-                  </>
-                ) : isCreatingCase ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Creating Case...
-                  </>
-                ) : (
-                  <>
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    Apply Now
-                  </>
-                )}
-              </Button>
-            </div>
+                <ExternalLink className="h-3.5 w-3.5" />
+                Official Site
+              </a>
+            )}
+            <button
+              onClick={handleApply}
+              disabled={isCreatingCase || isApplied}
+              className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3.5 py-1.5 rounded-md transition-colors ${
+                isApplied
+                  ? 'border border-green-400/50 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 cursor-default'
+                  : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60'
+              }`}
+            >
+              {isApplied ? (
+                <><Check className="h-3.5 w-3.5" />Applied</>
+              ) : isCreatingCase ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" />Submitting…</>
+              ) : (
+                <>Apply Now</>
+              )}
+            </button>
           </div>
         </div>
+      </div>
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Overview Card */}
-            <Card className="p-8 bg-card border-border shadow-sm">
-              <h2 className="text-2xl font-semibold text-foreground mb-4">Overview</h2>
-              <p className="text-foreground leading-relaxed text-lg">{scheme.briefDescription}</p>
-              
+      {/* ─── Two-column layout ───────────────────────────────────────────────── */}
+      <div className="grid lg:grid-cols-3 gap-5 items-start">
+
+        {/* ── Main column ── */}
+        <div className="lg:col-span-2 space-y-4">
+
+          {/* Overview */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border bg-background">
+              <h3 className="text-[13px] font-bold text-foreground">Overview</h3>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-foreground leading-relaxed">{decodeHtml(scheme.briefDescription)}</p>
               {scheme.tags?.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-border">
-                  <p className="text-sm text-muted-foreground mb-3">Tags</p>
-                  <div className="flex flex-wrap gap-2">
-                    {scheme.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary" className="bg-secondary/50 text-secondary-foreground border-0">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
+                <div className="mt-4 pt-4 border-t border-border flex flex-wrap gap-1.5">
+                  {scheme.tags.map((tag) => (
+                    <span key={tag} className="text-[10px] font-semibold bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                      {tag}
+                    </span>
+                  ))}
                 </div>
               )}
-            </Card>
-
-            {/* Eligibility Summary Card */}
-            {(eligibilityLoading || eligibilitySummary) && (
-              <Card className="p-8 bg-gradient-to-br from-primary/5 via-accent/5 to-secondary/10 border-primary/20 shadow-md">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-                      Your Eligibility Analysis
-                      {eligibilityCached && (
-                        <Badge variant="outline" className="text-xs">Cached</Badge>
-                      )}
-                    </h2>
-                    <p className="text-sm text-muted-foreground">Personalized based on your business profile</p>
-                  </div>
-                </div>
-                
-                {eligibilityLoading ? (
-                  <div className="flex items-center gap-3 text-muted-foreground py-4">
-                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                    <span>Analyzing your eligibility for this scheme...</span>
-                  </div>
-                ) : eligibilitySummary ? (
-                  <div className="prose prose-sm max-w-none mb-6">
-                    <div className="whitespace-pre-wrap text-foreground leading-relaxed">
-                      {eligibilitySummary}
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* Recommendations / Action Items */}
-                {recommendations.length > 0 && (
-                  <div className="mt-6 pt-6 border-t border-primary/20">
-                    <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                      <CheckCircle2 className="w-5 h-5 text-primary" />
-                      Action Items to Improve Eligibility
-                    </h3>
-                    <div className="space-y-3">
-                      {recommendations.map((rec) => (
-                        <div 
-                          key={rec.id} 
-                          className={`flex items-start gap-3 p-4 rounded-lg border transition-all ${
-                            rec.isCompleted 
-                              ? 'bg-green-50 border-green-200 opacity-75' 
-                              : 'bg-white/50 border-primary/10 hover:border-primary/30'
-                          }`}
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className={`font-medium ${rec.isCompleted ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
-                                {rec.title}
-                              </h4>
-                              <Badge 
-                                variant={rec.priority === 'high' ? 'destructive' : rec.priority === 'medium' ? 'default' : 'secondary'}
-                                className="text-xs"
-                              >
-                                {rec.priority}
-                              </Badge>
-                            </div>
-                            <p className={`text-sm ${rec.isCompleted ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
-                              {rec.description}
-                            </p>
-                            
-                            {/* Input field for missing values */}
-                            {!rec.isCompleted && rec.inputType && rec.inputField && (
-                              <div className="mt-3 flex items-center gap-2">
-                                <input
-                                  type={rec.inputType}
-                                  placeholder={`Enter ${rec.title.toLowerCase()}...`}
-                                  className="flex-1 px-3 py-2 text-sm border rounded-md bg-white dark:bg-slate-800 border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                  value={taskInputValues[rec.id] || ''}
-                                  onChange={(e) => setTaskInputValues(prev => ({ ...prev, [rec.id]: e.target.value }))}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      handleUpdateProfileField(rec.id, rec.inputField, taskInputValues[rec.id]);
-                                    }
-                                  }}
-                                />
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleUpdateProfileField(rec.id, rec.inputField, taskInputValues[rec.id])}
-                                  disabled={!taskInputValues[rec.id] || updatingField === rec.id}
-                                >
-                                  {updatingField === rec.id ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                  ) : (
-                                    'Submit'
-                                  )}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                          {!rec.isCompleted ? (
-                            !rec.inputType && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="shrink-0"
-                                onClick={() => handleMarkTaskDone(rec.id)}
-                                disabled={markingTask === rec.id}
-                              >
-                                {markingTask === rec.id ? (
-                                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Marking...</>
-                                ) : (
-                                  <><Check className="w-4 h-4 mr-1" /> Mark Done</>
-                                )}
-                              </Button>
-                            )
-                          ) : (
-                            <Badge variant="outline" className="shrink-0 bg-green-100 text-green-800 border-green-200">
-                              <Check className="w-3 h-3 mr-1" /> Done
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {/* Loading indicator for details */}
-            {detailLoading && (
-              <Card className="p-8 bg-card border-border shadow-sm">
-                <div className="flex items-center gap-3 text-muted-foreground justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  <span className="text-lg">Loading detailed information...</span>
-                </div>
-              </Card>
-            )}
-
-            {/* Detailed Description */}
-            {schemeContent?.detailedDescription_md && (
-              <Card className="p-8 bg-card border-border shadow-sm">
-                <button
-                  onClick={() => toggleSection('description')}
-                  className="flex items-center justify-between w-full text-2xl font-semibold text-foreground hover:text-primary transition-colors group"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-1 h-8 bg-primary rounded-full"></span>
-                    Detailed Description
-                  </span>
-                  <span className={`transition-transform ${expandedSections.description ? 'rotate-180' : ''} text-muted-foreground group-hover:text-primary`}>
-                    <ChevronLeft className="w-6 h-6" />
-                  </span>
-                </button>
-                {expandedSections.description && (
-                  <div className="mt-6 text-foreground leading-relaxed whitespace-pre-line text-lg border-l-2 border-border pl-6">
-                    {cleanMarkdown(schemeContent.detailedDescription_md)}
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {/* Eligibility */}
-            {eligibilityList?.length > 0 && (
-              <Card className="p-8 bg-card border-border shadow-sm">
-                <button
-                  onClick={() => toggleSection('eligibility')}
-                  className="flex items-center justify-between w-full text-2xl font-semibold text-foreground hover:text-primary transition-colors group"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-1 h-8 bg-primary rounded-full"></span>
-                    Eligibility Criteria
-                  </span>
-                  <span className={`transition-transform ${expandedSections.eligibility ? 'rotate-180' : ''} text-muted-foreground group-hover:text-primary`}>
-                    <ChevronLeft className="w-6 h-6" />
-                  </span>
-                </button>
-                {expandedSections.eligibility && (
-                  <ul className="mt-6 space-y-4">
-                    {eligibilityList.map((criterion: string, idx: number) => (
-                      <li key={idx} className="flex gap-4 items-start group">
-                        <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                          <Check className="w-4 h-4" />
-                        </div>
-                        <span className="text-foreground text-lg leading-relaxed">{criterion}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            )}
-
-            {/* Benefits */}
-            {benefitsBlocks?.length > 0 && (
-              <Card className="p-8 bg-card border-border shadow-sm">
-                <button
-                  onClick={() => toggleSection('benefits')}
-                  className="flex items-center justify-between w-full text-2xl font-semibold text-foreground hover:text-primary transition-colors group"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-1 h-8 bg-accent rounded-full"></span>
-                    Key Benefits
-                  </span>
-                  <span className={`transition-transform ${expandedSections.benefits ? 'rotate-180' : ''} text-muted-foreground group-hover:text-primary`}>
-                    <ChevronLeft className="w-6 h-6" />
-                  </span>
-                </button>
-                {expandedSections.benefits && (
-                  <div className="mt-6 space-y-3">
-                    {benefitsBlocks.map((block, idx) =>
-                      block.type === 'heading' ? (
-                        <h4 key={idx} className="text-base font-semibold text-foreground mt-6 mb-2 pt-4 border-t border-border first:border-0 first:pt-0 first:mt-2">
-                          {block.text}
-                        </h4>
-                      ) : (
-                        <div key={idx} className="flex gap-4 items-start group">
-                          <div className="w-6 h-6 rounded-full bg-accent/10 text-accent flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
-                            <Check className="w-4 h-4" />
-                          </div>
-                          <span className="text-foreground text-lg leading-relaxed">{block.text}</span>
-                        </div>
-                      )
-                    )}
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {/* Documents Required */}
-            {documents?.length > 0 && (
-              <Card className="p-8 bg-card border-border shadow-sm">
-                <button
-                  onClick={() => toggleSection('documents')}
-                  className="flex items-center justify-between w-full text-2xl font-semibold text-foreground hover:text-primary transition-colors group"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-1 h-8 bg-primary rounded-full"></span>
-                    Documents Required
-                  </span>
-                  <span className={`transition-transform ${expandedSections.documents ? 'rotate-180' : ''} text-muted-foreground group-hover:text-primary`}>
-                    <ChevronLeft className="w-6 h-6" />
-                  </span>
-                </button>
-                {expandedSections.documents && (
-                  <ul className="mt-6 space-y-3">
-                    {documents.map((doc: string, idx: number) => (
-                      <li key={idx} className="flex gap-4 items-start text-lg">
-                        <span className="text-primary font-bold text-xl leading-none">•</span>
-                        <span className="text-foreground">{doc}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            )}
-
-            {/* Application Process */}
-            {applicationProcess && (
-              <Card className="p-8 bg-card border-border shadow-sm">
-                <button
-                  onClick={() => toggleSection('process')}
-                  className="flex items-center justify-between w-full text-2xl font-semibold text-foreground hover:text-primary transition-colors group"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-1 h-8 bg-primary rounded-full"></span>
-                    Application Process
-                  </span>
-                  <span className={`transition-transform ${expandedSections.process ? 'rotate-180' : ''} text-muted-foreground group-hover:text-primary`}>
-                    <ChevronLeft className="w-6 h-6" />
-                  </span>
-                </button>
-                {expandedSections.process && (
-                  <div className="mt-6 text-foreground leading-relaxed whitespace-pre-line text-lg border-l-2 border-border pl-6">
-                    {typeof applicationProcess === 'string' ? cleanMarkdown(applicationProcess) : JSON.stringify(applicationProcess, null, 2)}
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {/* FAQs */}
-            {faqs?.length > 0 && (
-              <Card className="p-8 bg-card border-border shadow-sm">
-                <button
-                  onClick={() => toggleSection('faqs')}
-                  className="flex items-center justify-between w-full text-2xl font-semibold text-foreground hover:text-primary transition-colors group"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-1 h-8 bg-primary rounded-full"></span>
-                    Frequently Asked Questions
-                  </span>
-                  <span className={`transition-transform ${expandedSections.faqs ? 'rotate-180' : ''} text-muted-foreground group-hover:text-primary`}>
-                    <ChevronLeft className="w-6 h-6" />
-                  </span>
-                </button>
-                {expandedSections.faqs && (
-                  <div className="mt-6 space-y-6">
-                    {faqs.map((faq: any, idx: number) => (
-                      <div key={idx} className="space-y-3 pb-6 border-b border-border last:border-0 last:pb-0">
-                        <p className="font-semibold text-foreground text-lg">{cleanMarkdown(faq.question)}</p>
-                        <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{cleanMarkdown(faq.answer)}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {/* References */}
-            {schemeContent?.references?.length > 0 && (
-              <Card className="p-8 bg-card border-border shadow-sm">
-                <button
-                  onClick={() => toggleSection('references')}
-                  className="flex items-center justify-between w-full text-2xl font-semibold text-foreground hover:text-primary transition-colors group"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-1 h-8 bg-primary rounded-full"></span>
-                    Sources & References
-                  </span>
-                  <span className={`transition-transform ${expandedSections.references ? 'rotate-180' : ''} text-muted-foreground group-hover:text-primary`}>
-                    <ChevronLeft className="w-6 h-6" />
-                  </span>
-                </button>
-                {expandedSections.references && (
-                  <div className="mt-6 space-y-4">
-                    {schemeContent.references.map((ref: any, idx: number) => (
-                      <a
-                        key={idx}
-                        href={ref.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 text-primary hover:text-primary/80 transition-colors group p-3 rounded-lg hover:bg-primary/5"
-                      >
-                        <ExternalLink className="w-5 h-5 flex-shrink-0 group-hover:scale-110 transition-transform" />
-                        <span className="text-lg">{ref.title}</span>
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            )}
+            </div>
           </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Quick Actions Card */}
-            <Card className="p-6 bg-card border-border shadow-lg sticky top-24">
-              <h3 className="font-semibold text-foreground mb-4 text-lg">Quick Actions</h3>
-              <div className="space-y-3">
-                <Button
-                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-12 text-base font-medium"
-                  onClick={handleApplyNow}
-                  disabled={isCreatingCase || isApplied}
-                >
-                  {isApplied ? (
-                    <>
-                      <Check className="w-4 h-4 mr-2" />
-                      Applied
-                    </>
-                  ) : isCreatingCase ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Creating Case...
-                    </>
-                  ) : (
-                    <>
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      Apply Now
-                    </>
-                  )}
-                </Button>
-                <Button
-                  onClick={handleSaveScheme}
-                  variant={isSaved ? 'secondary' : 'outline'}
-                  className="w-full h-12 text-base font-medium"
-                >
-                  {isSaved ? (
-                    <>
-                      <BookmarkCheck className="w-4 h-4 mr-2" />
-                      Saved
-                    </>
-                  ) : (
-                    <>
-                      <Bookmark className="w-4 h-4 mr-2" />
-                      Save Scheme
-                    </>
-                  )}
-                </Button>
+          {/* Why you're eligible */}
+          {scheme.matchReason && (
+            <div className="bg-primary/5 border border-primary/20 rounded-none overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-primary/20">
+                <h3 className="text-[13px] font-bold text-primary flex items-center gap-2">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Why you&apos;re eligible
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Based on your business profile</p>
               </div>
-
-              {/* Info Box */}
-              <div className="mt-6 p-5 bg-gradient-to-br from-primary/10 to-accent/10 rounded-xl border border-primary/20">
-                <p className="text-sm text-muted-foreground mb-2 font-medium">Application Support</p>
-                <p className="text-base font-semibold text-foreground mb-3">
-                  Need help with your application?
-                </p>
-                <Button
-                  variant="link"
-                  className="text-primary hover:text-primary/90 p-0 h-auto font-medium"
-                >
-                  Get Free Consulting →
-                </Button>
+              <div className="px-5 py-4">
+                <p className="text-sm text-foreground leading-relaxed">{decodeHtml(scheme.matchReason)}</p>
               </div>
-            </Card>
+            </div>
+          )}
 
-            {/* Scheme Details Card */}
-            <Card className="p-6 bg-card border-border shadow-sm">
-              <h3 className="font-semibold text-foreground mb-4 text-lg">Scheme Details</h3>
-              <dl className="space-y-4 text-sm">
-                <div className="pb-4 border-b border-border">
-                  <dt className="text-muted-foreground font-medium mb-1">Ministry</dt>
-                  <dd className="text-foreground text-base">{scheme.nodalMinistryName}</dd>
-                </div>
-                {scheme.schemeCategory?.length > 0 && (
-                  <div className="pb-4 border-b border-border">
-                    <dt className="text-muted-foreground font-medium mb-1">Category</dt>
-                    <dd className="text-foreground text-base">
-                      <Badge variant="secondary" className="bg-secondary/50 text-secondary-foreground border-0">
-                        {scheme.schemeCategory[0]}
-                      </Badge>
-                    </dd>
-                  </div>
-                )}
-                {scheme.schemeLevel && (
-                  <div className="pb-4 border-b border-border">
-                    <dt className="text-muted-foreground font-medium mb-1">Level</dt>
-                    <dd className="text-foreground text-base">{scheme.schemeLevel}</dd>
-                  </div>
-                )}
-                {scheme.schemeFor && (
-                  <div className="pb-4 border-b border-border last:border-0">
-                    <dt className="text-muted-foreground font-medium mb-1">Scheme For</dt>
-                    <dd className="text-foreground text-base">{scheme.schemeFor}</dd>
-                  </div>
-                )}
-              </dl>
-            </Card>
+          {/* Loading indicator */}
+          {detailLoading && (
+            <div className="bg-card border border-border rounded-none px-5 py-6 flex items-center gap-3 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+              <span className="text-sm">Loading detailed information…</span>
+            </div>
+          )}
 
-            {/* Contact Card */}
-            <Card className="p-6 bg-card border-border shadow-sm">
-              <h3 className="font-semibold text-foreground mb-4 text-lg">Need Assistance?</h3>
-              <p className="text-muted-foreground text-sm mb-4">
-                Our team is here to help you navigate the application process.
+          {/* Detailed description */}
+          {schemeContent?.detailedDescription_md && (
+            <Section title="Detailed Description" icon={FileText}
+              expanded={expanded.description} onToggle={() => toggle('description')}>
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-line border-l-2 border-primary/30 pl-4">
+                {cleanMarkdown(schemeContent.detailedDescription_md)}
               </p>
-              <Button variant="outline" className="w-full">
-                Contact Support
-              </Button>
-            </Card>
+            </Section>
+          )}
+
+          {/* Eligibility */}
+          {eligibilityList.length > 0 && (
+            <Section title="Eligibility Criteria" icon={Shield}
+              expanded={expanded.eligibility} onToggle={() => toggle('eligibility')}>
+              <ul className="space-y-3">
+                {eligibilityList.map((criterion: string, idx: number) => (
+                  <EligibilityItem key={idx} criterion={criterion} />
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {/* Benefits */}
+          {benefitsBlocks.length > 0 && (
+            <Section title="Key Benefits" icon={Star}
+              expanded={expanded.benefits} onToggle={() => toggle('benefits')}>
+              <div className="space-y-2.5">
+                {benefitsBlocks.map((block, idx) =>
+                  block.type === 'heading' ? (
+                    <p key={idx} className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mt-4 mb-1 first:mt-0">
+                      {block.text}
+                    </p>
+                  ) : (
+                    <div key={idx} className="flex gap-3 items-start">
+                      <span className="text-primary font-bold text-base leading-none mt-0.5">·</span>
+                      <span className="text-sm text-foreground leading-relaxed">{block.text}</span>
+                    </div>
+                  )
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* Documents Required */}
+          {documents.length > 0 && (
+            <Section title="Documents Required" icon={FileText}
+              expanded={expanded.documents} onToggle={() => toggle('documents')}>
+              <ul className="space-y-2">
+                {documents.map((doc: string, idx: number) => (
+                  <li key={idx} className="flex gap-3 items-start">
+                    <span className="text-primary font-bold text-base leading-none mt-0.5">·</span>
+                    <span className="text-sm text-foreground">{decodeHtml(doc)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {/* Application Process */}
+          {applicationProcess && (
+            <Section title="Application Process" icon={ListOrdered}
+              expanded={expanded.process} onToggle={() => toggle('process')}>
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-line border-l-2 border-primary/30 pl-4">
+                {typeof applicationProcess === 'string'
+                  ? cleanMarkdown(applicationProcess)
+                  : JSON.stringify(applicationProcess, null, 2)}
+              </p>
+            </Section>
+          )}
+
+          {/* Exclusions */}
+          {exclusionsBlocks.length > 0 && (
+            <Section title="Exclusions" icon={Shield}
+              expanded={expanded.exclusions ?? false} onToggle={() => toggle('exclusions')}>
+              <div className="space-y-2.5">
+                {exclusionsBlocks.map((block, idx) =>
+                  block.type === 'heading' ? (
+                    <p key={idx} className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mt-4 mb-1 first:mt-0">
+                      {block.text}
+                    </p>
+                  ) : (
+                    <div key={idx} className="flex gap-3 items-start">
+                      <span className="text-destructive font-bold text-base leading-none mt-0.5">·</span>
+                      <span className="text-sm text-foreground leading-relaxed">{block.text}</span>
+                    </div>
+                  )
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* FAQs */}
+          {faqs.length > 0 && (
+            <Section title="Frequently Asked Questions" icon={HelpCircle}
+              expanded={expanded.faqs} onToggle={() => toggle('faqs')}>
+              <div className="space-y-4">
+                {faqs.map((faq: any, idx: number) => (
+                  <div key={idx} className="pb-4 border-b border-border last:border-0 last:pb-0">
+                    <p className="text-sm font-semibold text-foreground mb-1.5">{cleanMarkdown(faq.question)}</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{cleanMarkdown(faq.answer)}</p>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* References */}
+          {schemeContent?.references?.length > 0 && (
+            <Section title="Sources & References" icon={Link2}
+              expanded={expanded.references} onToggle={() => toggle('references')}>
+              <div className="space-y-1.5">
+                {schemeContent.references.map((ref: any, idx: number) => (
+                  <a
+                    key={idx}
+                    href={ref.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                    {decodeHtml(ref.title || '')}
+                  </a>
+                ))}
+              </div>
+            </Section>
+          )}
+        </div>
+
+        {/* ── Sidebar ── */}
+        <div className="space-y-4 lg:sticky lg:top-24">
+
+          {/* Apply card */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border bg-background">
+              <h3 className="text-[13px] font-bold text-foreground">Quick Actions</h3>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <button
+                onClick={handleApply}
+                disabled={isCreatingCase || isApplied}
+                className={`w-full flex items-center justify-center gap-2 text-sm font-semibold py-2.5 px-4 rounded-md transition-colors ${
+                  isApplied
+                    ? 'border border-green-400/50 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 cursor-default'
+                    : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60'
+                }`}
+              >
+                {isApplied ? (
+                  <><Check className="h-4 w-4" />Applied</>
+                ) : isCreatingCase ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</>
+                ) : (
+                  <>Apply Now</>
+                )}
+              </button>
+              <button
+                onClick={handleSave}
+                className={`w-full flex items-center justify-center gap-2 text-sm font-semibold py-2.5 px-4 rounded-md border transition-all ${
+                  isSaved
+                    ? 'border-primary/40 text-primary bg-primary/5 hover:bg-primary/10'
+                    : 'border-border text-foreground bg-muted/20 hover:bg-muted/50'
+                }`}
+              >
+                <span className={saveAnim ? 'animate-bookmark-pop' : ''} style={{ display: 'inline-flex' }}>
+                  {isSaved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+                </span>
+                {isSaved ? 'Saved' : 'Save Scheme'}
+              </button>
+              {officialUrl && (
+                <a
+                  href={officialUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 text-sm font-semibold py-2.5 px-4 rounded-md border border-border text-muted-foreground bg-muted/10 hover:text-foreground hover:bg-muted/30 transition-colors"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Official Website
+                </a>
+              )}
+            </div>
+
+            {/* Support blurb */}
+            <div className="mx-5 mb-4 p-4 bg-primary/5 border border-primary/20 rounded-md">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Need help applying?</p>
+              <p className="text-sm font-medium text-foreground">Our agents guide you through the process end-to-end.</p>
+            </div>
           </div>
+
+          {/* Scheme meta */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border bg-background">
+              <h3 className="text-[13px] font-bold text-foreground">Scheme Info</h3>
+            </div>
+            <div className="px-5 py-2">
+              {[
+                { label: 'Ministry',    value: scheme.nodalMinistryName },
+                { label: 'Level',       value: scheme.schemeLevel },
+                { label: 'Category',    value: scheme.schemeCategory?.[0] },
+                { label: 'Scheme For',  value: scheme.schemeFor },
+              ].map(({ label, value }) =>
+                value ? (
+                  <div key={label} className="flex items-start gap-4 py-2.5 border-b border-border last:border-0">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.06em] w-24 shrink-0 pt-0.5">{label}</span>
+                    <span className="text-sm text-foreground">{decodeHtml(value)}</span>
+                  </div>
+                ) : null
+              )}
+            </div>
+          </div>
+
+          {/* Tags */}
+          {scheme.tags?.length > 0 && (
+            <div className="bg-card border border-border rounded-none overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-border bg-background">
+                <h3 className="text-[13px] font-bold text-foreground">Tags</h3>
+              </div>
+              <div className="px-5 py-4 flex flex-wrap gap-1.5">
+                {scheme.tags.map((tag) => (
+                  <span key={tag} className="text-[10px] font-semibold bg-muted text-muted-foreground px-2 py-1 rounded-full">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

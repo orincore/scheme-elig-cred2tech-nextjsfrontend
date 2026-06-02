@@ -1,0 +1,144 @@
+'use client';
+
+import * as React from 'react';
+import { useEffect, useState } from 'react';
+import { useTheme } from 'next-themes';
+import { cn } from '@/lib/utils';
+
+type Color = 'default' | 'red';
+type Size = 'normal' | 'sm';
+
+interface TravelingBorderButtonProps {
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
+  children: React.ReactNode;
+  className?: string;
+  showIcon?: boolean;
+  size?: Size;
+  /** Force a theme regardless of the active app theme. */
+  theme?: 'light' | 'dark';
+  solid?: boolean;
+  disabled?: boolean;
+  width?: string | number;
+  color?: Color;
+}
+
+/**
+ * Cred2Tech "traveling border" button — an animated stroke travels around the
+ * border on hover while the trailing arrow slides forward. Ported 1:1 from the
+ * Cred2Tech WebApp (TravelingBorderButton.jsx).
+ */
+export default function TravelingBorderButton({
+  onClick,
+  type = 'button',
+  children,
+  className = '',
+  showIcon = true,
+  size = 'normal',
+  theme: themeOverride,
+  solid = false,
+  disabled = false,
+  width,
+  color = 'default',
+}: TravelingBorderButtonProps) {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  const isLight =
+    themeOverride === 'light' ||
+    (themeOverride === undefined && mounted && resolvedTheme === 'light');
+
+  const colorConfig = {
+    default: {
+      textColor: solid
+        ? isLight
+          ? 'text-white'
+          : 'text-[#0a1628]'
+        : isLight
+          ? 'text-[#0a1628]'
+          : 'text-white',
+      strokeColor: solid ? (isLight ? 'white' : '#0a1628') : isLight ? '#0a1628' : 'white',
+      bgColor: solid
+        ? isLight
+          ? '#0a1628'
+          : '#ffffff'
+        : isLight
+          ? 'rgba(10, 22, 40, 0.03)'
+          : 'rgba(255,255,255,0.03)',
+      borderColor: solid
+        ? 'transparent'
+        : isLight
+          ? 'rgba(10, 22, 40, 0.05)'
+          : 'rgba(255,255,255,0.05)',
+    },
+    red: {
+      textColor: solid ? 'text-white' : 'text-red-600',
+      strokeColor: solid ? 'white' : '#dc2626',
+      bgColor: solid ? '#dc2626' : isLight ? 'rgba(220, 38, 38, 0.05)' : 'rgba(239, 68, 68, 0.1)',
+      borderColor: solid ? 'transparent' : isLight ? 'rgba(220, 38, 38, 0.2)' : 'rgba(239, 68, 68, 0.3)',
+    },
+  } as const;
+
+  const config = colorConfig[color] || colorConfig.default;
+  const rounded = className.includes('rounded-none') ? '0' : size === 'sm' ? '10' : '14';
+
+  const baseClasses = cn(
+    'relative items-center justify-center gap-2.5 font-bold transition-all duration-300 group overflow-visible shadow-lg hover:scale-[1.03] active:scale-95',
+    config.textColor,
+    width ? 'flex' : 'inline-flex',
+    size === 'sm' ? 'px-6 py-2.5 text-[13px] rounded-[10px]' : 'px-10 py-4 text-[17px] rounded-[14px]',
+    disabled && 'opacity-50 cursor-not-allowed hover:scale-100',
+    className,
+  );
+
+  return (
+    <button
+      type={type}
+      className={baseClasses}
+      style={{ background: config.bgColor, border: `2px solid ${config.borderColor}`, width }}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {/* Traveling border highlight */}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        <rect
+          x="0"
+          y="0"
+          width="100%"
+          height="100%"
+          rx={rounded}
+          ry={rounded}
+          fill="none"
+          stroke={config.strokeColor}
+          strokeWidth="3"
+          strokeDasharray="140 1000"
+          strokeDashoffset="140"
+          style={{
+            strokeDashoffset: 'var(--dash-offset, 140)',
+            transition: `stroke-dashoffset ${size === 'sm' ? '1.5s' : '1.2s'} cubic-bezier(0.4, 0, 0.2, 1)`,
+          }}
+          className={size === 'sm' ? 'group-hover:[--dash-offset:-200]' : 'group-hover:[--dash-offset:-500]'}
+        />
+      </svg>
+
+      <span className="relative z-10">{children}</span>
+      {showIcon && (
+        <svg
+          className={`relative z-10 transition-transform duration-300 group-hover:translate-x-1 ${
+            size === 'sm' ? 'w-4 h-4' : 'w-5 h-5'
+          }`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 12h14M12 5l7 7-7 7" />
+        </svg>
+      )}
+    </button>
+  );
+}

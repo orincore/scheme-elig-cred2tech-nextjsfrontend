@@ -3,16 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { casesApi } from '@/lib/services/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Briefcase, Search, Filter, UserCheck, ArrowRight, Calendar, User } from 'lucide-react';
+import { Briefcase, Search, Filter, UserCheck, Calendar, User } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STATUS_OPTIONS = [
@@ -34,6 +32,35 @@ const PRIORITY_OPTIONS = [
   { value: 'LOW', label: 'Low' },
 ];
 
+const STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  NEW:               { label: 'New',          cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  ASSIGNED:          { label: 'Assigned',     cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+  IN_PROGRESS:       { label: 'In Progress',  cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  UNDER_REVIEW:      { label: 'Under Review', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  DOCUMENTS_PENDING: { label: 'Docs Pending', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+  APPROVED:          { label: 'Approved',     cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  CLOSED:            { label: 'Closed',       cls: 'bg-muted text-muted-foreground' },
+  REJECTED:          { label: 'Rejected',     cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+};
+
+const PRIORITY_CFG: Record<string, string> = {
+  URGENT: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  HIGH:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  MEDIUM: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  LOW:    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+};
+
+function StatusPill({ status }: { status: string }) {
+  const cfg = STATUS_CFG[status] ?? { label: status?.replace(/_/g, ' ') || '—', cls: 'bg-muted text-muted-foreground' };
+  return <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>;
+}
+
+function PriorityPill({ priority }: { priority: string }) {
+  if (!priority) return <span className="text-xs text-muted-foreground/50">—</span>;
+  const cls = PRIORITY_CFG[priority] ?? 'bg-muted text-muted-foreground';
+  return <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${cls}`}>{priority}</span>;
+}
+
 export default function CasesPage() {
   const router = useRouter();
   const [cases, setCases] = useState<any[]>([]);
@@ -46,10 +73,12 @@ export default function CasesPage() {
   const [assignDialog, setAssignDialog] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
+  const [isAssigning, setIsAssigning] = useState(false);
 
   useEffect(() => {
     loadCases();
     loadAgents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, priorityFilter]);
 
   const loadCases = async () => {
@@ -58,11 +87,9 @@ export default function CasesPage() {
       const params: any = {};
       if (statusFilter !== 'ALL') params.status = statusFilter;
       if (priorityFilter !== 'ALL') params.priority = priorityFilter;
-      
+
       const response = await casesApi.getAllCases(params);
-      if (response.success) {
-        setCases(response.cases);
-      }
+      if (response.success) setCases(response.cases);
     } catch (error) {
       console.error('Failed to load cases:', error);
       toast.error('Failed to load cases');
@@ -73,30 +100,38 @@ export default function CasesPage() {
 
   const loadAgents = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/admin-auth/agents?approvalStatus=APPROVED', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`
-        }
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/admin-auth/agents?approvalStatus=APPROVED`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` },
       });
       const data = await response.json();
-      if (data.success) {
-        setAgents(data.agents.filter((a: any) => a.status !== 'BLOCKED'));
-      }
+      if (data.success) setAgents(data.agents.filter((a: any) => a.status !== 'BLOCKED'));
     } catch (error) {
       console.error('Failed to load agents:', error);
     }
   };
 
+  // Auto-open the assign dialog when navigated here with ?assign=<caseId>
+  // (the admin dashboard links here expecting the dialog to open).
+  useEffect(() => {
+    if (isLoading || cases.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const assignId = params.get('assign');
+    if (!assignId) return;
+    const match = cases.find((c) => String(c.id) === String(assignId));
+    if (match) {
+      setSelectedCase(match);
+      setAssignDialog(true);
+      // Clear the param so it doesn't re-open on filter changes.
+      window.history.replaceState({}, '', '/admin/dashboard/cases');
+    }
+  }, [isLoading, cases]);
+
   const handleAssign = async () => {
     if (!selectedAgent || !selectedCase) return;
-    
+    setIsAssigning(true);
     try {
-      const response = await casesApi.assignCase(
-        selectedCase.id,
-        parseInt(selectedAgent),
-        assignmentNotes
-      );
-      
+      const response = await casesApi.assignCase(selectedCase.id, parseInt(selectedAgent), assignmentNotes);
       if (response.success) {
         toast.success('Case assigned successfully');
         loadCases();
@@ -107,266 +142,264 @@ export default function CasesPage() {
       }
     } catch (error: any) {
       toast.error(error.message || 'Failed to assign case');
+    } finally {
+      setIsAssigning(false);
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'NEW':
-        return <Badge className="bg-blue-100 text-blue-800">New</Badge>;
-      case 'ASSIGNED':
-        return <Badge className="bg-purple-100 text-purple-800">Assigned</Badge>;
-      case 'IN_PROGRESS':
-        return <Badge className="bg-yellow-100 text-yellow-800">In Progress</Badge>;
-      case 'UNDER_REVIEW':
-        return <Badge className="bg-indigo-100 text-indigo-800">Under Review</Badge>;
-      case 'DOCUMENTS_PENDING':
-        return <Badge className="bg-orange-100 text-orange-800">Docs Pending</Badge>;
-      case 'APPROVED':
-        return <Badge className="bg-green-100 text-green-800">Approved</Badge>;
-      case 'CLOSED':
-        return <Badge variant="secondary">Closed</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
+  const openAssign = (caseItem: any) => {
+    setSelectedCase(caseItem);
+    setSelectedAgent('');
+    setAssignmentNotes('');
+    setAssignDialog(true);
   };
 
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'URGENT':
-        return <Badge variant="destructive">Urgent</Badge>;
-      case 'HIGH':
-        return <Badge className="bg-orange-100 text-orange-800">High</Badge>;
-      case 'MEDIUM':
-        return <Badge className="bg-blue-100 text-blue-800">Medium</Badge>;
-      case 'LOW':
-        return <Badge variant="outline">Low</Badge>;
-      default:
-        return null;
-    }
-  };
-
-  const filteredCases = cases.filter((caseItem) => {
-    const matchesSearch = 
-      caseItem.caseNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      caseItem.msmeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      caseItem.schemeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      caseItem.agentName?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
+  const filteredCases = cases.filter((c) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      c.caseNumber?.toLowerCase().includes(q) ||
+      c.msmeName?.toLowerCase().includes(q) ||
+      c.schemeName?.toLowerCase().includes(q) ||
+      c.assignedAgentName?.toLowerCase().includes(q) ||
+      c.agentName?.toLowerCase().includes(q)
+    );
   });
+
+  const newCount      = cases.filter((c) => c.status === 'NEW').length;
+  const assignedCount = cases.filter((c) => c.status === 'ASSIGNED' || c.status === 'IN_PROGRESS').length;
+  const closedCount   = cases.filter((c) => c.status === 'CLOSED' || c.status === 'APPROVED').length;
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-64 bg-slate-800" />
-        <div className="flex gap-4">
-          <Skeleton className="h-10 w-64 bg-slate-800" />
-          <Skeleton className="h-10 w-32 bg-slate-800" />
-          <Skeleton className="h-10 w-32 bg-slate-800" />
+      <div className="space-y-6">
+        <div className="border-b-2 border-border pb-6 space-y-3">
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="h-8 w-56" />
+          <Skeleton className="h-4 w-64" />
         </div>
-        {[...Array(5)].map((_, i) => (
-          <Skeleton key={i} className="h-24 bg-slate-800" />
-        ))}
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-80 w-full" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center">
-          <Briefcase className="mr-3 h-8 w-8" />
-          Case Management
-        </h2>
-        <p className="text-slate-500 dark:text-slate-400">
-          Total: {filteredCases.length} cases
-        </p>
+      {/* ─── Page Header ──────────────────────────────────────────────────── */}
+      <div className="border-b-2 border-border pb-6">
+        <p className="text-[11px] font-bold text-primary uppercase tracking-[0.1em] mb-1.5">Operations</p>
+        <div className="flex items-end justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-foreground">Case Management</h1>
+            <p className="text-sm text-muted-foreground mt-1">Assign and track MSME scheme applications</p>
+          </div>
+        </div>
+
+        {/* Inline stats */}
+        <div className="flex items-center gap-5 mt-6 flex-wrap">
+          <div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Total</p>
+            <p className="text-2xl font-bold text-foreground">{cases.length}</p>
+            <p className="text-xs text-muted-foreground">All cases</p>
+          </div>
+          <div className="w-px h-10 bg-border" />
+          <div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">New</p>
+            <p className="text-2xl font-bold text-orange-500">{newCount}</p>
+            <p className="text-xs text-muted-foreground">Need assignment</p>
+          </div>
+          <div className="w-px h-10 bg-border" />
+          <div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Active</p>
+            <p className="text-2xl font-bold text-amber-500">{assignedCount}</p>
+            <p className="text-xs text-muted-foreground">Assigned / in progress</p>
+          </div>
+          <div className="w-px h-10 bg-border" />
+          <div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Completed</p>
+            <p className="text-2xl font-bold text-green-500">{closedCount}</p>
+            <p className="text-xs text-muted-foreground">Closed / approved</p>
+          </div>
+        </div>
       </div>
 
-      {/* Filters */}
-      <Card className="bg-white dark:bg-slate-800">
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
-                placeholder="Search by case number, MSME, scheme, or agent..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-40">
-                <Filter className="mr-2 h-4 w-4" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-40">
-                <Filter className="mr-2 h-4 w-4" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PRIORITY_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {/* ─── Filters ──────────────────────────────────────────────────────── */}
+      <div className="bg-card border border-border rounded-none p-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by case #, MSME, scheme, or agent…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
           </div>
-        </CardContent>
-      </Card>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-44"><Filter className="mr-2 h-4 w-4" /><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="w-44"><Filter className="mr-2 h-4 w-4" /><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {PRIORITY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
-      {/* Cases List */}
-      <div className="space-y-4">
+      {/* ─── Cases Table ──────────────────────────────────────────────────── */}
+      <div className="bg-card border border-border rounded-none overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border bg-background">
+          <h3 className="text-[13px] font-bold text-foreground">
+            {filteredCases.length === 0 ? 'No Cases' : `Cases (${filteredCases.length})`}
+          </h3>
+        </div>
+
         {filteredCases.length === 0 ? (
-          <Card className="bg-white dark:bg-slate-800">
-            <CardContent className="p-12 text-center">
-              <Briefcase className="mx-auto h-12 w-12 text-slate-400 mb-4" />
-              <p className="text-slate-500 dark:text-slate-400">No cases found</p>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <Briefcase className="h-12 w-12 text-muted-foreground/40 mb-4" />
+            <p className="text-sm font-medium text-foreground mb-1">No cases found</p>
+            <p className="text-xs text-muted-foreground">Try adjusting the filters, or wait for new applications.</p>
+          </div>
         ) : (
-          filteredCases.map((caseItem) => (
-            <Card key={caseItem.id} className="bg-white dark:bg-slate-800">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-semibold text-slate-900 dark:text-white">{caseItem.caseNumber}</h3>
-                      {getStatusBadge(caseItem.status)}
-                      {getPriorityBadge(caseItem.priority)}
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <p className="text-slate-500 flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          MSME
-                        </p>
-                        <p className="font-medium text-slate-900 dark:text-white">{caseItem.msmeName || 'Unknown'}</p>
+          <div className="overflow-auto">
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+              <colgroup>
+                <col style={{ width: '26%' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '18%' }} />
+              </colgroup>
+              <thead>
+                <tr className="bg-background border-b-2 border-border">
+                  {['Case # / Scheme', 'MSME', 'Status', 'Priority', 'Agent · Created', 'Actions'].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-[10px] font-extrabold text-muted-foreground uppercase tracking-[0.1em]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCases.map((c) => (
+                  <tr key={c.id} className="border-b border-border hover:bg-muted/20 transition-colors">
+                    {/* Case # / Scheme */}
+                    <td className="px-5 py-4">
+                      <p className="text-sm font-semibold text-foreground font-mono">{c.caseNumber}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 max-w-[220px] truncate">{c.schemeName || c.schemeId || '—'}</p>
+                    </td>
+                    {/* MSME */}
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-1.5 text-sm text-foreground">
+                        <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="truncate max-w-[140px]">{c.msmeName || 'Unknown'}</span>
                       </div>
-                      <div>
-                        <p className="text-slate-500">Scheme</p>
-                        <p className="font-medium text-slate-900 dark:text-white">{caseItem.schemeName || caseItem.schemeId}</p>
+                    </td>
+                    {/* Status */}
+                    <td className="px-5 py-4"><StatusPill status={c.status} /></td>
+                    {/* Priority */}
+                    <td className="px-5 py-4"><PriorityPill priority={c.priority} /></td>
+                    {/* Agent · Created */}
+                    <td className="px-5 py-4">
+                      {c.assignedAgentName ? (
+                        <div className="flex items-center gap-1 text-sm text-foreground">
+                          <UserCheck className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <span className="truncate max-w-[120px]">{c.assignedAgentName}</span>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Unassigned</p>
+                      )}
+                      {c.assignedByName && (
+                        <p className="text-[10px] text-muted-foreground/80 truncate max-w-[140px]">by {c.assignedByName}</p>
+                      )}
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                        <Calendar className="h-2.5 w-2.5 shrink-0" />
+                        {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '—'}
                       </div>
-                      <div>
-                        <p className="text-slate-500 flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          Created
-                        </p>
-                        <p className="font-medium text-slate-900 dark:text-white">
-                          {new Date(caseItem.createdAt).toLocaleDateString()}
-                        </p>
+                    </td>
+                    {/* Actions */}
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => router.push(`/admin/dashboard/cases/${c.id}`)}
+                          className="inline-flex items-center text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors"
+                        >
+                          View
+                        </button>
+                        {c.status === 'NEW' ? (
+                          <button
+                            onClick={() => openAssign(c)}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                          >
+                            <UserCheck className="h-3 w-3" />
+                            Assign
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openAssign(c)}
+                            className="inline-flex items-center text-[11px] font-semibold px-2.5 py-1 rounded-md border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
+                          >
+                            Reassign
+                          </button>
+                        )}
                       </div>
-                    </div>
-
-                    {caseItem.assignedAgentName && (
-                      <div className="mt-3 p-2 bg-slate-50 dark:bg-slate-700/50 rounded">
-                        <p className="text-sm text-slate-500">
-                          Assigned to: <span className="font-medium text-slate-900 dark:text-white">{caseItem.assignedAgentName}</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="ml-4 flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/admin/dashboard/cases/${caseItem.id}`)}
-                    >
-                      <ArrowRight className="mr-2 h-4 w-4" />
-                      View Details
-                    </Button>
-                    {caseItem.status === 'NEW' ? (
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setSelectedCase(caseItem);
-                          setAssignDialog(true);
-                        }}
-                      >
-                        <UserCheck className="mr-2 h-4 w-4" />
-                        Assign
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedCase(caseItem);
-                          setAssignDialog(true);
-                        }}
-                      >
-                        Reassign
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* Assign Dialog */}
-      <Dialog open={assignDialog} onOpenChange={setAssignDialog}>
+      {/* ─── Assign Dialog ────────────────────────────────────────────────── */}
+      <Dialog open={assignDialog} onOpenChange={(open) => { if (!isAssigning) setAssignDialog(open); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5" />
               {selectedCase?.status === 'NEW' ? 'Assign Case' : 'Reassign Case'}
             </DialogTitle>
             <DialogDescription>
-              {selectedCase?.caseNumber} - {selectedCase?.schemeName}
+              <span className="font-mono">{selectedCase?.caseNumber}</span>
+              {selectedCase?.schemeName ? ` · ${selectedCase.schemeName}` : ''}
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
+
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Select Agent *</Label>
               <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose an agent..." />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Choose an agent…" /></SelectTrigger>
                 <SelectContent>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id.toString()}>
-                      {agent.fullName} ({agent.employeeId}) - {agent.region}
+                      {agent.fullName} ({agent.employeeId}){agent.region ? ` · ${agent.region}` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {agents.length === 0 && (
+                <p className="text-xs text-muted-foreground">No approved agents available.</p>
+              )}
             </div>
-            
+
             <div className="space-y-2">
-              <Label>Notes (Optional)</Label>
+              <Label>Notes (optional)</Label>
               <Textarea
-                placeholder="Add assignment notes..."
+                placeholder="Add assignment notes…"
                 value={assignmentNotes}
                 onChange={(e) => setAssignmentNotes(e.target.value)}
               />
             </div>
           </div>
-          
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleAssign}
-              disabled={!selectedAgent}
-            >
-              {selectedCase?.status === 'NEW' ? 'Assign Case' : 'Reassign Case'}
+            <Button variant="outline" onClick={() => setAssignDialog(false)} disabled={isAssigning}>Cancel</Button>
+            <Button onClick={handleAssign} disabled={!selectedAgent || isAssigning}>
+              {isAssigning ? 'Saving…' : selectedCase?.status === 'NEW' ? 'Assign Case' : 'Reassign Case'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -41,23 +41,45 @@ async function fetchApi(
 
   const url = `${API_BASE_URL}${endpoint}`;
 
+  const hadToken = !!token;
+
   try {
     const response = await fetch(url, requestOptions);
 
-    if (response.status === 401) {
-      console.error('401 Unauthorized - clearing invalid token');
-      // Clear invalid token
-      if (tokenType === 'msme') {
-        sessionStorage.removeItem('msme_auth_token');
-      } else {
-        localStorage.removeItem(`${tokenType}_token`);
-      }
-      // Don't redirect - let the calling code handle it
-      throw new Error('Invalid token');
-    }
-
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Read the server's error message (if any) for clearer errors/toasts.
+      let body: any = null;
+      try { body = await response.json(); } catch { /* non-JSON body */ }
+      const message: string = body?.message || `HTTP error! status: ${response.status}`;
+
+      // Distinguish an INVALIDATED SESSION (a token we sent got rejected — expired,
+      // account blocked/suspended, or session revoked) from a request that simply
+      // failed (e.g. a login attempt with no token yet, or a validation error).
+      // Only the former should clear creds + bounce to login. Without this guard,
+      // a login attempt by a blocked account would wrongly say "logged out".
+      const blockedOrRevoked =
+        response.status === 403 &&
+        /account is (not active|inactive|suspended|blocked)|session has been revoked/i.test(message);
+
+      if (hadToken && (response.status === 401 || blockedOrRevoked)) {
+        if (tokenType === 'msme') sessionStorage.removeItem('msme_auth_token');
+        else localStorage.removeItem(`${tokenType}_token`);
+        if (tokenType === 'admin' && typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin/login')) {
+          window.location.href = '/admin/login';
+        }
+        const revoked = /session has been revoked/i.test(message);
+        throw new Error(
+          response.status === 401
+            ? 'Your session expired. Please log in again.'
+            : revoked
+              ? 'Your session has ended. Please log in again.'
+              : 'Your admin access has been blocked. You have been logged out.',
+        );
+      }
+
+      // No active session involved → surface the REAL server message so callers
+      // (e.g. the login page) can show the actual reason.
+      throw new Error(message);
     }
 
     return await response.json();
@@ -101,6 +123,14 @@ export const agentAuthApi = {
     method: 'PUT',
     body: JSON.stringify({ currentPassword, newPassword }),
   }, 'agent'),
+
+  getAvailabilityLog: (params?: { from?: string; to?: string }) => {
+    const clean = Object.entries(params || {})
+      .filter(([, v]) => v)
+      .map(([k, v]) => [k, String(v)]) as [string, string][];
+    const query = new URLSearchParams(clean).toString();
+    return fetchApi(`/api/agent-auth/availability-log${query ? '?' + query : ''}`, {}, 'agent');
+  },
 };
 
 // ==================== ADMIN AUTH APIs ====================
@@ -112,7 +142,16 @@ export const adminAuthApi = {
   }, 'admin'),
   
   getProfile: () => fetchApi('/api/admin-auth/profile', {}, 'admin'),
-  
+
+  updateProfile: (data: { fullName?: string; email?: string; phone?: string }) =>
+    fetchApi('/api/admin-auth/profile', { method: 'PUT', body: JSON.stringify(data) }, 'admin'),
+
+  changePassword: (oldPassword: string, newPassword: string) =>
+    fetchApi('/api/admin-auth/profile/change-password', { method: 'POST', body: JSON.stringify({ oldPassword, newPassword }) }, 'admin'),
+
+  logoutAllDevices: () =>
+    fetchApi('/api/admin-auth/profile/logout-all', { method: 'POST' }, 'admin'),
+
   getDashboardStats: () => fetchApi('/api/admin-auth/dashboard/stats', {}, 'admin'),
   
   getPendingAgents: () => fetchApi('/api/admin-auth/agents/pending', {}, 'admin'),
@@ -121,6 +160,9 @@ export const adminAuthApi = {
     const query = new URLSearchParams(params || {}).toString();
     return fetchApi(`/api/admin-auth/agents?${query}`, {}, 'admin');
   },
+
+  getAgentById: (agentId: string | number) =>
+    fetchApi(`/api/admin-auth/agents/${agentId}`, {}, 'admin'),
   
   approveAgent: (agentId: string, action: 'APPROVE' | 'REJECT', rejectionReason?: string) => fetchApi(`/api/admin-auth/agents/${agentId}/approve`, {
     method: 'PUT',
@@ -131,6 +173,61 @@ export const adminAuthApi = {
     method: 'PUT',
     body: JSON.stringify({ action, reason }),
   }, 'admin'),
+
+  // ── AI usage & cost monitoring ──
+  getAiUsageSummary: (params?: { from?: string; to?: string; stage?: string }) => {
+    const query = new URLSearchParams(
+      Object.entries(params || {}).filter(([, v]) => v) as [string, string][]
+    ).toString();
+    return fetchApi(`/api/admin-auth/ai-usage/summary${query ? '?' + query : ''}`, {}, 'admin');
+  },
+
+  getAiUsageLog: (params?: { from?: string; to?: string; userId?: string; stage?: string; page?: number; pageSize?: number }) => {
+    const clean = Object.entries(params || {})
+      .filter(([, v]) => v !== undefined && v !== '' && v !== null)
+      .map(([k, v]) => [k, String(v)]) as [string, string][];
+    const query = new URLSearchParams(clean).toString();
+    return fetchApi(`/api/admin-auth/ai-usage${query ? '?' + query : ''}`, {}, 'admin');
+  },
+
+  // ── Admin account management (SUPER_ADMIN) ──
+  listAdmins: () => fetchApi('/api/admin-auth/admins', {}, 'admin'),
+
+  getAdminByCode: (adminCode: string) =>
+    fetchApi(`/api/admin-auth/admins/${adminCode}`, {}, 'admin'),
+
+  createAdmin: (data: { fullName: string; email: string; phone?: string; role?: string }) =>
+    fetchApi('/api/admin-auth/admins', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
+
+  updateAdminStatus: (id: string | number, status: string) =>
+    fetchApi(`/api/admin-auth/admins/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }, 'admin'),
+
+  resetAdminPassword: (id: string | number) =>
+    fetchApi(`/api/admin-auth/admins/${id}/reset-password`, { method: 'POST' }, 'admin'),
+
+  deleteAdmin: (id: string | number) =>
+    fetchApi(`/api/admin-auth/admins/${id}`, { method: 'DELETE' }, 'admin'),
+
+  // ── Audit log (SUPER_ADMIN) ──
+  getAuditLog: (params?: { adminId?: string; action?: string; from?: string; to?: string; page?: number; pageSize?: number }) => {
+    const clean = Object.entries(params || {})
+      .filter(([, v]) => v !== undefined && v !== '' && v !== null)
+      .map(([k, v]) => [k, String(v)]) as [string, string][];
+    const query = new URLSearchParams(clean).toString();
+    return fetchApi(`/api/admin-auth/audit${query ? '?' + query : ''}`, {}, 'admin');
+  },
+
+  // ── MSME User management (read-only) ──
+  listMsmeUsers: (params?: { search?: string; page?: number; pageSize?: number }) => {
+    const clean = Object.entries(params || {})
+      .filter(([, v]) => v !== undefined && v !== '' && v !== null)
+      .map(([k, v]) => [k, String(v)]) as [string, string][];
+    const query = new URLSearchParams(clean).toString();
+    return fetchApi(`/api/admin-auth/msme-users${query ? '?' + query : ''}`, {}, 'admin');
+  },
+
+  getMsmeUserDetail: (id: string | number) =>
+    fetchApi(`/api/admin-auth/msme-users/${id}`, {}, 'admin'),
 };
 
 // ==================== CASE APIs ====================
@@ -273,27 +370,16 @@ export const casesApi = {
     method: 'PUT',
     body: JSON.stringify({ status, notes }),
   }, 'admin'),
+
+  updateCasePriority: (caseId: string, priority: string) => fetchApi(`/api/cases/${caseId}/priority`, {
+    method: 'PUT',
+    body: JSON.stringify({ priority }),
+  }, 'admin'),
   
   addAdminNote: (caseId: string, adminNotes: string, msmeNotes?: string) => fetchApi(`/api/cases/${caseId}/notes/admin`, {
     method: 'PUT',
     body: JSON.stringify({ adminNotes, msmeNotes, noteType: 'ADMIN' }),
   }, 'admin'),
-
-  // Eligibility check with caching
-  checkEligibility: (schemeId: string, msmeUserId: number, completedTasks?: string[]) => fetchApi('/api/schemes/eligibility-check', {
-    method: 'POST',
-    body: JSON.stringify({ schemeId, msmeUserId, completedTasks }),
-  }, 'msme'),
-
-  completeEligibilityTask: (schemeId: string, msmeUserId: number, taskId: string) => fetchApi('/api/schemes/eligibility-check/complete-task', {
-    method: 'POST',
-    body: JSON.stringify({ schemeId, msmeUserId, taskId }),
-  }, 'msme'),
-
-  updateProfileField: (msmeUserId: number, field: string, value: any) => fetchApi('/api/schemes/eligibility-check/update-profile', {
-    method: 'POST',
-    body: JSON.stringify({ msmeUserId, field, value }),
-  }, 'msme'),
 };
 
 export { API_BASE_URL, getToken };

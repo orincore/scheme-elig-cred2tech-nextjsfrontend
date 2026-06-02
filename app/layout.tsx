@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import localFont from 'next/font/local'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { MsmeAuthProvider } from '@/contexts/MsmeAuthContext'
@@ -7,8 +7,17 @@ import { SchemesProvider } from '@/contexts/SchemesContext'
 import { Providers } from '@/components/providers'
 import ToasterProvider from '@/components/toaster-provider'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+// Cred2Tech brand font — loaded via next/font for reliable hashing + preloading.
+const hikasami = localFont({
+  src: [
+    { path: '../public/fonts/Hikasami-Regular.otf', weight: '400', style: 'normal' },
+    { path: '../public/fonts/Hikasami-Medium.otf', weight: '500', style: 'normal' },
+    { path: '../public/fonts/Hikasami-SemiBold.otf', weight: '600', style: 'normal' },
+    { path: '../public/fonts/Hikasami-Bold.otf', weight: '700', style: 'normal' },
+  ],
+  variable: '--font-hikasami',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'MSME Scheme Discovery Platform',
@@ -39,7 +48,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="bg-background" suppressHydrationWarning>
+    <html lang="en" className={`${hikasami.variable} bg-background`} suppressHydrationWarning>
       <body className="font-sans antialiased">
         <Providers>
           <MsmeAuthProvider>

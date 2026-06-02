@@ -3,23 +3,28 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
-import { Spinner } from '@/components/ui/spinner';
+import { AuthShell } from '@/components/auth/auth-shell';
+import { MsmeAuthBrand } from '@/components/auth/msme-auth-brand';
+import { PhoneInput } from '@/components/ui/phone-input';
+import { fieldLabelClass } from '@/components/ui/underline-field';
+import TravelingBorderButton from '@/components/ui/traveling-border-button';
+import { validateMobile } from '@/lib/validators';
 import { toast } from 'sonner';
-import { Shield, Briefcase } from 'lucide-react';
+import { Briefcase, Shield } from 'lucide-react';
 
 export default function LoginPage() {
   const { sendOtp, isLoading } = useMsmeAuth();
+  const [countryCode, setCountryCode] = useState('+91');
   const [mobile, setMobileState] = useState('');
+  const [error, setError] = useState('');
 
   const handleContinue = async () => {
-    if (!mobile || mobile.length !== 10) {
-      toast.error('Please enter a valid 10-digit mobile number');
+    const err = validateMobile(mobile, countryCode);
+    if (err) {
+      setError(err);
       return;
     }
-
+    setError('');
     const success = await sendOtp(mobile);
     if (success) {
       toast.success('OTP sent to your mobile number');
@@ -29,101 +34,79 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen px-4 py-8">
-      <Card className="w-full max-w-md p-8 bg-card">
-        <div className="space-y-8">
-          {/* Header */}
-          <div className="text-center space-y-3">
-            <h1 className="text-3xl font-bold text-foreground">
-              Welcome to MSME
-            </h1>
-            <p className="text-muted-foreground">
-              Discover government schemes for your business
+    <AuthShell brand={<MsmeAuthBrand />}>
+      <div className="mb-10">
+        <h1 className="text-[28px] md:text-[34px] font-bold text-[#0a1628] dark:text-[#e6edf7] tracking-tight mb-2">
+          Sign in to continue
+        </h1>
+        <p className="text-[#4a5d73] dark:text-[#94a3b8] text-[14px] md:text-[15px]">
+          Enter your mobile number to get started
+        </p>
+      </div>
+
+      <div className="space-y-8 mb-8">
+        <div>
+          <label className={fieldLabelClass}>Mobile Number *</label>
+          <PhoneInput
+            countryCode={countryCode}
+            phoneNumber={mobile}
+            onCountryCodeChange={(code) => { setCountryCode(code); setError(''); }}
+            onPhoneNumberChange={(digits) => { setMobileState(digits); setError(''); }}
+            onBlur={() => setError(validateMobile(mobile, countryCode))}
+            error={!!error}
+          />
+          {error ? (
+            <span className="text-[11px] text-red-500 mt-1.5 block">{error}</span>
+          ) : (
+            <p className="text-[12px] text-[#4a5d73] dark:text-[#94a3b8] mt-2">
+              We&apos;ll send an OTP to verify your number
             </p>
-          </div>
-
-          {/* Form */}
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                Mobile Number
-              </label>
-              <div className="flex gap-2">
-                <div className="flex items-center px-3 bg-input rounded-lg border border-border">
-                  <span className="text-foreground font-medium">+91</span>
-                </div>
-                <Input
-                  type="tel"
-                  placeholder="Enter 10-digit mobile number"
-                  maxLength={10}
-                  value={mobile}
-                  onChange={(e) => setMobileState(e.target.value.replace(/[^\d]/g, ''))}
-                  disabled={isLoading}
-                  className="flex-1 bg-input border-border text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                We&apos;ll send an OTP to verify your number
-              </p>
-            </div>
-
-            <Button
-              onClick={handleContinue}
-              disabled={isLoading || mobile.length !== 10}
-              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-11"
-            >
-              {isLoading ? (
-                <>
-                  <Spinner className="mr-2" />
-                  Sending OTP...
-                </>
-              ) : (
-                'Continue'
-              )}
-            </Button>
-          </div>
-
-          {/* Features */}
-          <div className="space-y-4 pt-8 border-t border-border">
-            <h3 className="text-sm font-semibold text-foreground">Why choose us?</h3>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex gap-2">
-                <span className="text-primary font-bold">✓</span>
-                <span>One-click access to 100+ schemes</span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-primary font-bold">✓</span>
-                <span>Personalized recommendations</span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-primary font-bold">✓</span>
-                <span>Expert support throughout the process</span>
-              </li>
-            </ul>
-          </div>
-
-          {/* Portal Links */}
-          <div className="pt-6 border-t border-border">
-            <p className="text-xs text-muted-foreground text-center mb-3">
-              Are you an Agent or Admin?
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <Link href="/agent/login">
-                <Button variant="outline" className="w-full h-10">
-                  <Briefcase className="mr-2 h-4 w-4" />
-                  Agent Portal
-                </Button>
-              </Link>
-              <Link href="/admin/login">
-                <Button variant="outline" className="w-full h-10">
-                  <Shield className="mr-2 h-4 w-4" />
-                  Admin Portal
-                </Button>
-              </Link>
-            </div>
-          </div>
+          )}
         </div>
-      </Card>
-    </div>
+      </div>
+
+      <TravelingBorderButton
+        onClick={handleContinue}
+        disabled={isLoading}
+        className="w-full py-3.5 text-[15px] rounded-[10px]"
+        showIcon={!isLoading}
+      >
+        {isLoading ? (
+          <div className="flex justify-center items-center w-full h-full">
+            <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+          </div>
+        ) : (
+          <span>Continue</span>
+        )}
+      </TravelingBorderButton>
+
+      {/* Portal links */}
+      <div className="mt-10 pt-6 border-t border-gray-100 dark:border-gray-800">
+        <p className="text-[12px] text-[#4a5d73] dark:text-[#94a3b8] text-center mb-3">
+          Are you an Agent or Admin?
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Link
+            href="/agent/login"
+            className="flex items-center justify-center gap-2 rounded-[10px] border border-gray-200 dark:border-gray-700 py-2.5 text-[13px] font-semibold text-[#0a1628] dark:text-[#e6edf7] hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+          >
+            <Briefcase className="h-4 w-4" />
+            Agent Portal
+          </Link>
+          <Link
+            href="/admin/login"
+            className="flex items-center justify-center gap-2 rounded-[10px] border border-gray-200 dark:border-gray-700 py-2.5 text-[13px] font-semibold text-[#0a1628] dark:text-[#e6edf7] hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+          >
+            <Shield className="h-4 w-4" />
+            Admin Portal
+          </Link>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center gap-1.5 mt-8 text-[11px] text-[#4a5d73] dark:text-[#94a3b8]">
+        <Shield className="h-[13px] w-[13px] text-indigo-600" />
+        256-bit encryption · Your data stays private
+      </div>
+    </AuthShell>
   );
 }

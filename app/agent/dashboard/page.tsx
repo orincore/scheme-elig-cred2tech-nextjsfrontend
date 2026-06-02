@@ -1,253 +1,210 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAgentAuth } from '@/contexts/AgentAuthContext';
 import { useAgentSocket } from '@/lib/hooks/useSocket';
 import { casesApi } from '@/lib/services/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  Briefcase, 
-  Clock, 
-  CheckCircle, 
+import {
+  Briefcase,
+  Clock,
+  CheckCircle,
   AlertCircle,
   ArrowRight,
-  TrendingUp
+  Calendar,
 } from 'lucide-react';
 import Link from 'next/link';
 
-interface CaseStats {
-  total: number;
-  new: number;
-  inProgress: number;
-  pendingDocs: number;
-  closed: number;
+const PILL = 'inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full';
+
+const STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  NEW:               { label: 'New',          cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  ASSIGNED:          { label: 'Assigned',     cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+  IN_PROGRESS:       { label: 'In Progress',  cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  UNDER_REVIEW:      { label: 'Under Review', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  DOCUMENTS_PENDING: { label: 'Docs Pending', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+  APPROVED:          { label: 'Approved',     cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  REJECTED:          { label: 'Rejected',     cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  CLOSED:            { label: 'Closed',       cls: 'bg-muted text-muted-foreground' },
+};
+
+function StatusPill({ status }: { status: string }) {
+  const cfg = STATUS_CFG[status] ?? { label: status?.replace(/_/g, ' ') || '—', cls: 'bg-muted text-muted-foreground' };
+  return <span className={`${PILL} ${cfg.cls}`}>{cfg.label}</span>;
 }
 
+interface CaseStats { total: number; inProgress: number; pendingDocs: number; closed: number; }
+
 export default function AgentDashboardPage() {
-  const { agent, isAuthenticated } = useAgentAuth();
-  const router = useRouter();
+  const { agent } = useAgentAuth();
   const { assignedCases, setAssignedCases } = useAgentSocket();
-  const [stats, setStats] = useState<CaseStats>({
-    total: 0,
-    new: 0,
-    inProgress: 0,
-    pendingDocs: 0,
-    closed: 0,
-  });
+  const [stats, setStats] = useState<CaseStats>({ total: 0, inProgress: 0, pendingDocs: 0, closed: 0 });
   const [isLoading, setIsLoading] = useState(true);
-  const [recentCases, setRecentCases] = useState<any[]>([]);
 
   useEffect(() => {
-    // Check if agent is authenticated
-    const token = localStorage.getItem('agent_token');
-    if (!token && !agent) {
-      router.push('/agent/login');
-      return;
-    }
-  }, [agent, router]);
-
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!agent) {
-        setIsLoading(false);
-        return;
-      }
-      
+    const fetchData = async () => {
       try {
         const response = await casesApi.getAgentCases();
-        console.log('Agent cases response:', response);
         if (response.success) {
           const cases = response.cases;
           setAssignedCases(cases);
-          setRecentCases(cases.slice(0, 5));
-          
-          // Calculate stats
           setStats({
-            total: cases.length,
-            new: cases.filter((c: any) => c.status === 'NEW').length,
-            inProgress: cases.filter((c: any) => c.status === 'IN_PROGRESS').length,
+            total:       cases.length,
+            inProgress:  cases.filter((c: any) => c.status === 'IN_PROGRESS').length,
             pendingDocs: cases.filter((c: any) => c.status === 'DOCUMENTS_PENDING').length,
-            closed: cases.filter((c: any) => c.status === 'CLOSED').length,
+            closed:      cases.filter((c: any) => ['CLOSED', 'APPROVED'].includes(c.status)).length,
           });
         }
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
+      } catch (err) {
+        console.error('Failed to fetch dashboard data:', err);
       } finally {
         setIsLoading(false);
       }
     };
-
-    fetchDashboardData();
+    fetchData();
   }, [setAssignedCases]);
 
-  // Use assignedCases for recent cases display (recentCases is redundant)
-  const allRecentCases = assignedCases.slice(0, 5);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'NEW': return 'bg-blue-100 text-blue-800';
-      case 'ASSIGNED': return 'bg-purple-100 text-purple-800';
-      case 'IN_PROGRESS': return 'bg-yellow-100 text-yellow-800';
-      case 'DOCUMENTS_PENDING': return 'bg-orange-100 text-orange-800';
-      case 'UNDER_REVIEW': return 'bg-indigo-100 text-indigo-800';
-      case 'APPROVED': return 'bg-green-100 text-green-800';
-      case 'CLOSED': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  const recentCases = assignedCases.slice(0, 5);
 
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
+        <div className="border-b-2 border-border pb-6 space-y-3">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-80" />
         </div>
-        <Skeleton className="h-64" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+        </div>
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Welcome Section */}
-      <div>
-        <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Welcome back, {agent?.fullName?.split(' ')[0]}!
-        </h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
-          Here's what's happening with your cases today.
-        </p>
-      </div>
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="border-b-2 border-border pb-6">
+        <p className="text-[11px] font-bold text-primary uppercase tracking-[0.1em] mb-1.5">Overview</p>
+        <h1 className="text-2xl font-extrabold tracking-tight text-foreground">
+          Welcome back, {agent?.fullName?.split(' ')[0] || 'Agent'}
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">Here's what's happening with your cases today.</p>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">Total Cases</p>
-                <p className="text-3xl font-bold">{stats.total}</p>
-              </div>
-              <Briefcase className="h-8 w-8 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">In Progress</p>
-                <p className="text-3xl font-bold">{stats.inProgress}</p>
-              </div>
-              <Clock className="h-8 w-8 text-yellow-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">Pending Docs</p>
-                <p className="text-3xl font-bold">{stats.pendingDocs}</p>
-              </div>
-              <AlertCircle className="h-8 w-8 text-orange-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">Completed</p>
-                <p className="text-3xl font-bold">{stats.closed}</p>
-              </div>
-              <CheckCircle className="h-8 w-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Cases */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Recent Cases</CardTitle>
-          <Link href="/agent/dashboard/cases">
-            <Button variant="ghost" size="sm">
-              View All <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </Link>
-        </CardHeader>
-        <CardContent>
-          {allRecentCases.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Briefcase className="mx-auto h-12 w-12 mb-4 opacity-50" />
-              <p>No cases assigned yet</p>
-              <p className="text-sm">Cases will appear here when assigned by admin</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {allRecentCases.slice(0, 5).map((caseItem, index) => (
-                <div
-                  key={`${caseItem.id}-${caseItem.case_number || caseItem.caseNumber}-${index}`}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-medium">{caseItem.case_number || caseItem.caseNumber}</h3>
-                      <Badge className={getStatusColor(caseItem.status)}>
-                        {caseItem.status}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {caseItem.scheme_name || caseItem.schemeName || caseItem.schemeId}
-                    </p>
-                    <p className="text-sm text-gray-400">
-                      MSME: {caseItem.msme_name || caseItem.msmeName || 'Unknown'}
-                    </p>
-                  </div>
-                  
-                  <div className="text-right">
-                    <p className="text-sm text-gray-500">
-                      Created {new Date(caseItem.created_at || caseItem.createdAt).toLocaleDateString()}
-                    </p>
-                    <Link href={`/agent/dashboard/cases/${caseItem.id}`}>
-                      <Button variant="ghost" size="sm" className="mt-2">
-                        View Details
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Performance Hint */}
-      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-4">
-            <TrendingUp className="h-6 w-6 text-blue-600 mt-1" />
-            <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">Performance Tip</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Keep your availability status updated so admins can assign cases to you.
-                Cases are assigned based on your expertise and current workload.
-              </p>
-            </div>
+        {/* Stats strip */}
+        <div className="flex items-center gap-5 mt-6 flex-wrap">
+          <div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Total</p>
+            <p className="text-2xl font-bold text-foreground">{stats.total}</p>
+            <p className="text-xs text-muted-foreground">Assigned cases</p>
           </div>
-        </CardContent>
-      </Card>
+          <div className="w-px h-10 bg-border" />
+          <div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">In Progress</p>
+            <p className="text-2xl font-bold text-amber-500">{stats.inProgress}</p>
+            <p className="text-xs text-muted-foreground">Active work</p>
+          </div>
+          <div className="w-px h-10 bg-border" />
+          <div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Docs Pending</p>
+            <p className="text-2xl font-bold text-orange-500">{stats.pendingDocs}</p>
+            <p className="text-xs text-muted-foreground">Awaiting upload</p>
+          </div>
+          <div className="w-px h-10 bg-border" />
+          <div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Closed</p>
+            <p className="text-2xl font-bold text-green-500">{stats.closed}</p>
+            <p className="text-xs text-muted-foreground">Completed</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Quick-stat cards ────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Cases',   value: stats.total,       icon: Briefcase,    color: 'text-blue-500' },
+          { label: 'In Progress',   value: stats.inProgress,  icon: Clock,        color: 'text-amber-500' },
+          { label: 'Pending Docs',  value: stats.pendingDocs, icon: AlertCircle,  color: 'text-orange-500' },
+          { label: 'Completed',     value: stats.closed,      icon: CheckCircle,  color: 'text-green-500' },
+        ].map(({ label, value, icon: Icon, color }) => (
+          <div key={label} className="bg-card border border-border rounded-none p-5 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
+              <p className="text-3xl font-extrabold text-foreground mt-0.5">{value}</p>
+            </div>
+            <Icon className={`h-8 w-8 shrink-0 ${color}`} />
+          </div>
+        ))}
+      </div>
+
+      {/* ── Recent Cases ────────────────────────────────────────────────── */}
+      <div className="bg-card border border-border rounded-none overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border bg-background flex items-center justify-between">
+          <h3 className="text-[13px] font-bold text-foreground flex items-center gap-2">
+            <Briefcase className="h-4 w-4 text-muted-foreground" />
+            Recent Cases
+          </h3>
+          <Link
+            href="/agent/dashboard/cases"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+          >
+            View all <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+
+        {recentCases.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+            <Briefcase className="h-10 w-10 text-muted-foreground/30 mb-3" />
+            <p className="text-sm font-semibold text-foreground mb-1">No cases assigned yet</p>
+            <p className="text-xs text-muted-foreground">Cases will appear here when assigned by an admin</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {recentCases.map((c: any, idx: number) => (
+              <div
+                key={`${c.id}-${idx}`}
+                className="flex items-start justify-between px-5 py-4 hover:bg-muted/20 transition-colors gap-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <span className="text-[13px] font-bold text-foreground font-mono">
+                      {c.case_number || c.caseNumber}
+                    </span>
+                    <StatusPill status={c.status} />
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {c.scheme_name || c.schemeName || c.schemeId || '—'}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/70 mt-0.5 flex items-center gap-1">
+                    <Calendar className="h-2.5 w-2.5" />
+                    {new Date(c.created_at || c.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+                <Link
+                  href={`/agent/dashboard/cases/${c.id}`}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors shrink-0"
+                >
+                  View <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Tip card ────────────────────────────────────────────────────── */}
+      <div className="bg-card border border-border rounded-none p-5 flex items-start gap-4">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
+          <CheckCircle className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <p className="text-[13px] font-bold text-foreground">Keep your availability updated</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Admins assign cases based on your expertise and current availability status. Set yourself as Available when ready to take new cases.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

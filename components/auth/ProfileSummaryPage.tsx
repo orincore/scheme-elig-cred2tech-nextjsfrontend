@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Spinner } from '@/components/ui/spinner';
+import { AuthShell } from '@/components/auth/auth-shell';
+import { MsmeAuthBrand } from '@/components/auth/msme-auth-brand';
+import TravelingBorderButton from '@/components/ui/traveling-border-button';
 import { toast } from 'sonner';
-import { CheckCircle2, RefreshCw, ArrowRight, Building2, MapPin, User, Calendar } from 'lucide-react';
+import { CheckCircle2, RefreshCw, Building2, MapPin, User, Info } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -36,7 +36,6 @@ export default function ProfileSummaryPage() {
         return;
       }
 
-      // Load Razorpay script dynamically if not already loaded
       if (!window.Razorpay) {
         await new Promise<void>((resolve, reject) => {
           const script = document.createElement('script');
@@ -88,141 +87,146 @@ export default function ProfileSummaryPage() {
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'N/A';
     try {
-      return new Date(dateStr).toLocaleDateString('en-IN', {
-        day: 'numeric', month: 'short', year: 'numeric',
-      });
+      return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     } catch {
       return dateStr;
     }
   };
 
-  const ProfileField = ({ label, value }: { label: string; value: string | number | null | undefined }) => (
-    <div className="space-y-0.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-medium text-foreground">{value || 'N/A'}</p>
+  const Field = ({ label, value, span }: { label: string; value: string | number | null | undefined; span?: boolean }) => (
+    <div className={`space-y-0.5 ${span ? 'col-span-2 md:col-span-3' : ''}`}>
+      <p className="text-[12px] text-[#4a5d73] dark:text-[#94a3b8]">{label}</p>
+      <p className="text-[14px] font-semibold text-[#0a1628] dark:text-[#e6edf7] break-words">{value || 'N/A'}</p>
+    </div>
+  );
+
+  const Section = ({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) => (
+    <div>
+      <h2 className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3 flex items-center gap-2">
+        {icon} {title}
+      </h2>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">{children}</div>
     </div>
   );
 
   return (
-    <div className="flex items-center justify-center min-h-screen px-4 py-8 bg-background">
-      <div className="w-full max-w-2xl space-y-6">
-
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <div className="flex justify-center">
-            <div className="bg-primary/10 p-3 rounded-full">
-              <CheckCircle2 className="w-8 h-8 text-primary" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Welcome Back!</h1>
-          <p className="text-muted-foreground text-sm">
-            Here is your business profile on record.
-            {existingProfile?.lastDataRefreshAt && (
-              <> Last updated: <span className="font-medium text-foreground">{formatDate(existingProfile.lastDataRefreshAt)}</span></>
-            )}
-          </p>
-        </div>
-
-        {/* Profile Card */}
-        <Card className="p-6 bg-card border border-border space-y-6">
-
-          {/* Personal / Identity */}
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-              <User className="w-4 h-4" /> Identity
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <ProfileField label="Name" value={existingProfile?.name} />
-              <ProfileField label="Mobile" value={existingProfile?.mobileNumber} />
-              <ProfileField label="Email" value={existingProfile?.email} />
-              <ProfileField label="PAN Number" value={existingProfile?.panNumber} />
-            </div>
-          </div>
-
-          <div className="border-t border-border" />
-
-          {/* Business */}
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-              <Building2 className="w-4 h-4" /> Business
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <ProfileField label="Legal Name" value={existingProfile?.legalNameOfBusiness} />
-              <ProfileField label="Trade Name" value={existingProfile?.tradeNameOfBusiness} />
-              <ProfileField label="GSTIN" value={existingProfile?.gstin} />
-              <ProfileField label="Constitution" value={existingProfile?.constitutionOfBusiness} />
-              <ProfileField label="Taxpayer Type" value={existingProfile?.taxpayerType} />
-              <ProfileField label="GSTIN Status" value={existingProfile?.gstinStatus} />
-              <ProfileField label="Business Type" value={existingProfile?.businessType} />
-              <ProfileField label="Business Sector" value={existingProfile?.businessSector} />
-              <ProfileField label="Enterprise Category" value={existingProfile?.enterpriseCategory} />
-              <ProfileField label="Annual Turnover (₹L)" value={existingProfile?.annualTurnoverLakhs} />
-              <ProfileField label="Years in Operation" value={existingProfile?.yearsInOperation} />
-              <ProfileField label="Registration Date" value={existingProfile?.registrationDate} />
-            </div>
-          </div>
-
-          <div className="border-t border-border" />
-
-          {/* Address */}
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-              <MapPin className="w-4 h-4" /> Address
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <ProfileField label="Principal Address" value={existingProfile?.principalAddress} />
-              </div>
-              <ProfileField label="City" value={existingProfile?.principalCity} />
-              <ProfileField label="District" value={existingProfile?.principalDistrict} />
-              <ProfileField label="State" value={existingProfile?.principalState} />
-              <ProfileField label="Pincode" value={existingProfile?.principalPincode} />
-            </div>
-          </div>
-
-          {refreshed && (
-            <>
-              <div className="border-t border-border" />
-              <div className="flex items-center gap-2 text-sm text-primary">
-                <CheckCircle2 className="w-4 h-4" />
-                Profile data has been refreshed with the latest information.
-              </div>
-            </>
+    <AuthShell
+      brand={<MsmeAuthBrand />}
+      contentClassName="flex-1 flex flex-col px-6 py-8 md:px-10 lg:px-14 md:py-12 max-w-4xl mx-auto w-full"
+    >
+      <div className="mb-8">
+        <h1 className="text-[28px] md:text-[34px] font-bold text-[#0a1628] dark:text-[#e6edf7] tracking-tight mb-2">
+          Welcome Back!
+        </h1>
+        <p className="text-[#4a5d73] dark:text-[#94a3b8] text-[14px] md:text-[15px]">
+          Here is your business profile on record.
+          {existingProfile?.lastDataRefreshAt && (
+            <> Last updated: <span className="font-semibold text-[#0a1628] dark:text-[#e6edf7]">{formatDate(existingProfile.lastDataRefreshAt)}</span></>
           )}
-        </Card>
-
-        {/* Actions */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          {!refreshed && (
-            <Button
-              onClick={handleRefresh}
-              disabled={isRefreshing || isLoading}
-              variant="outline"
-              className="flex-1 gap-2 border-primary text-primary hover:bg-primary/10"
-            >
-              {isRefreshing || isLoading ? (
-                <><Spinner className="w-4 h-4" /> Processing...</>
-              ) : (
-                <>
-                  <RefreshCw className="w-4 h-4" />
-                  Fetch Latest Details (₹{existingProfile?.refreshPrice ?? 49})
-                </>
-              )}
-            </Button>
-          )}
-
-          <Button
-            onClick={continueToDashboard}
-            disabled={isRefreshing || isLoading}
-            className="flex-1 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            {refreshed ? 'Go to Dashboard' : 'Continue with Existing Details'}
-            <ArrowRight className="w-4 h-4" />
-          </Button>
-        </div>
-
-        {error && <p className="text-xs text-destructive text-center">{error}</p>}
+        </p>
       </div>
-    </div>
+
+      <div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#162048] p-6 space-y-6">
+        <Section icon={<User className="w-4 h-4" />} title="Identity">
+          <Field label="Name" value={existingProfile?.name} />
+          <Field label="Mobile" value={existingProfile?.mobileNumber} />
+          <Field label="Email" value={existingProfile?.email} />
+          <Field label="PAN Number" value={existingProfile?.panNumber} />
+        </Section>
+
+        <div className="border-t border-gray-100 dark:border-gray-800" />
+
+        <Section icon={<Building2 className="w-4 h-4" />} title="Business">
+          <Field label="Legal Name" value={existingProfile?.legalNameOfBusiness} />
+          <Field label="Trade Name" value={existingProfile?.tradeNameOfBusiness} />
+          <Field label="GSTIN" value={existingProfile?.gstin} />
+          <Field label="Constitution" value={existingProfile?.constitutionOfBusiness} />
+          <Field label="Taxpayer Type" value={existingProfile?.taxpayerType} />
+          <Field label="GSTIN Status" value={existingProfile?.gstinStatus} />
+          <Field label="Business Type" value={existingProfile?.businessType} />
+          <Field label="Business Sector" value={existingProfile?.businessSector} />
+          <Field label="Enterprise Category" value={existingProfile?.enterpriseCategory} />
+          <Field label="Annual Turnover (₹L)" value={existingProfile?.annualTurnoverLakhs} />
+          <Field label="Years in Operation" value={existingProfile?.yearsInOperation} />
+          <Field label="Registration Date" value={existingProfile?.registrationDate} />
+        </Section>
+
+        <div className="border-t border-gray-100 dark:border-gray-800" />
+
+        <Section icon={<MapPin className="w-4 h-4" />} title="Address">
+          <Field label="Principal Address" value={existingProfile?.principalAddress} span />
+          <Field label="City" value={existingProfile?.principalCity} />
+          <Field label="District" value={existingProfile?.principalDistrict} />
+          <Field label="State" value={existingProfile?.principalState} />
+          <Field label="Pincode" value={existingProfile?.principalPincode} />
+        </Section>
+
+        {refreshed && (
+          <>
+            <div className="border-t border-gray-100 dark:border-gray-800" />
+            <div className="flex items-center gap-2 text-[13px] text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="w-4 h-4" />
+              Profile data has been refreshed with the latest information.
+            </div>
+          </>
+        )}
+      </div>
+
+      {!refreshed && (
+        <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-amber-200/70 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-[12.5px] leading-relaxed text-amber-800 dark:text-amber-300">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            Only fetch the latest data if your details have recently changed on your
+            GST account, or if this information looks very old. Each refresh is a
+            paid update, so there&apos;s no need to refresh if everything above is
+            already correct.
+          </span>
+        </div>
+      )}
+
+      <div className="flex flex-col sm:flex-row sm:justify-end sm:items-center gap-3 mt-4">
+        {!refreshed && (
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing || isLoading}
+            className="group relative inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-indigo-50 dark:bg-indigo-950/40 px-4 py-2.5 text-[13px] font-semibold text-indigo-700 dark:text-indigo-300 shadow-sm transition-all hover:bg-indigo-100 dark:hover:bg-indigo-900/50 hover:border-indigo-300 dark:hover:border-indigo-700 hover:-translate-y-px hover:shadow-md hover:shadow-indigo-500/20 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+          >
+            {/* "New" sticker overlay */}
+            {!(isRefreshing || isLoading) && (
+              <span className="pointer-events-none absolute -top-2.5 -left-2.5 z-10">
+                <span className="relative flex">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-70 animate-ping" />
+                  <span className="relative inline-flex items-center rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-md ring-2 ring-white dark:ring-[#0a1628] -rotate-12">
+                    New
+                  </span>
+                </span>
+              </span>
+            )}
+
+            {isRefreshing || isLoading ? (
+              <><div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" /> Processing…</>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4 transition-transform duration-500 group-hover:rotate-180" />
+                Fetch Latest Details (₹{existingProfile?.refreshPrice ?? 49})
+              </>
+            )}
+          </button>
+        )}
+
+        <TravelingBorderButton
+          onClick={continueToDashboard}
+          disabled={isRefreshing || isLoading}
+          solid
+          showIcon={false}
+          className="px-5 py-2.5 text-[14px] rounded-lg"
+        >
+          {refreshed ? 'Go to Dashboard' : 'Continue with Existing Details'}
+        </TravelingBorderButton>
+      </div>
+
+      {error && <p className="text-[11px] text-red-500 text-center mt-4">{error}</p>}
+    </AuthShell>
   );
 }

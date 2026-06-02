@@ -2,324 +2,141 @@
 
 import { useState } from 'react';
 import { useAgentAuth } from '@/contexts/AgentAuthContext';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { agentAuthApi } from '@/lib/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/components/ui/separator';
-import { 
-  Settings, 
-  Bell, 
-  Lock, 
-  User, 
-  Globe,
-  Save,
-  LogOut,
-  Shield,
-  Smartphone
-} from 'lucide-react';
+import { LogoutConfirmDialog } from '@/components/ui/logout-confirm-dialog';
+import { Bell, Lock, Globe, LogOut, Eye, EyeOff } from 'lucide-react';
+import { toast } from 'sonner';
+
+function SectionHeader({ icon: Icon, title, description }: { icon: any; title: string; description?: string }) {
+  return (
+    <div className="px-5 py-3.5 border-b border-border bg-background">
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-[13px] font-bold text-foreground">{title}</h3>
+      </div>
+      {description && <p className="text-[11px] text-muted-foreground mt-0.5 ml-6">{description}</p>}
+    </div>
+  );
+}
+
+function ToggleRow({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-border/50 last:border-0">
+      <div>
+        <p className="text-[13px] font-semibold text-foreground">{label}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{description}</p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
 
 export default function AgentSettingsPage() {
   const { agent, logout } = useAgentAuth();
-  const [isLoading, setIsLoading] = useState(false);
-  const [settings, setSettings] = useState({
-    emailNotifications: true,
-    smsNotifications: false,
-    pushNotifications: true,
-    twoFactorAuth: false,
-    language: 'en',
-    timezone: 'Asia/Kolkata',
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
-  });
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
-  const handleNotificationChange = (key: string, value: boolean) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
-  };
+  // Notification toggles (UI-only — no backend for these yet)
+  const [notif, setNotif] = useState({ email: true, sms: false, push: true });
 
-  const handleSaveNotifications = async () => {
-    setIsLoading(true);
+  // Password change
+  const [pwd, setPwd] = useState({ current: '', next: '', confirm: '' });
+  const [showCur, setShowCur] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [changingPwd, setChangingPwd] = useState(false);
+
+  const changePassword = async () => {
+    if (!pwd.current || !pwd.next) { toast.error('Enter your current and new password'); return; }
+    if (pwd.next.length < 8) { toast.error('New password must be at least 8 characters'); return; }
+    if (pwd.next !== pwd.confirm) { toast.error('Passwords do not match'); return; }
+    setChangingPwd(true);
     try {
-      // Add API call to save notification settings
-      console.log('Saving notification settings:', settings);
-    } catch (error) {
-      console.error('Error saving notification settings:', error);
+      const res = await agentAuthApi.changePassword(pwd.current, pwd.next);
+      if (res.success) {
+        toast.success('Password changed successfully');
+        setPwd({ current: '', next: '', confirm: '' });
+      } else {
+        toast.error(res.message || 'Failed to change password');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Current password is incorrect');
     } finally {
-      setIsLoading(false);
+      setChangingPwd(false);
     }
-  };
-
-  const handlePasswordChange = async () => {
-    if (settings.newPassword !== settings.confirmPassword) {
-      alert('Passwords do not match');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Add API call to change password
-      console.log('Changing password');
-      setSettings({
-        ...settings,
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
-      });
-    } catch (error) {
-      console.error('Error changing password:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    logout();
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Settings</h1>
-          <p className="text-muted-foreground">Manage your account settings and preferences</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="border-b-2 border-border pb-6">
+        <p className="text-[11px] font-bold text-primary uppercase tracking-[0.1em] mb-1.5">Preferences</p>
+        <h1 className="text-2xl font-extrabold tracking-tight text-foreground">Settings</h1>
+        <p className="text-sm text-muted-foreground mt-1">Manage your account settings and preferences</p>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-5 items-start">
+        {/* Notifications */}
+        <div className="bg-card border border-border rounded-none overflow-hidden">
+          <SectionHeader icon={Bell} title="Notifications" description="Control how you receive alerts" />
+          <div className="px-5 py-3">
+            <ToggleRow label="Email Notifications" description="Case updates and status changes via email" checked={notif.email} onChange={(v) => setNotif({ ...notif, email: v })} />
+            <ToggleRow label="SMS Notifications" description="Urgent alerts via SMS" checked={notif.sms} onChange={(v) => setNotif({ ...notif, sms: v })} />
+            <ToggleRow label="Push Notifications" description="Browser push notifications" checked={notif.push} onChange={(v) => setNotif({ ...notif, push: v })} />
+          </div>
+        </div>
+
+        {/* Change Password */}
+        <div className="bg-card border border-border rounded-none overflow-hidden">
+          <SectionHeader icon={Lock} title="Change Password" description="Update your account password" />
+          <div className="px-5 py-4 space-y-3">
+            <div className="space-y-1.5">
+              <Label>Current Password</Label>
+              <div className="relative">
+                <Input type={showCur ? 'text' : 'password'} value={pwd.current} onChange={(e) => setPwd({ ...pwd, current: e.target.value })} placeholder="Enter current password" className="h-9 text-sm pr-9" />
+                <button type="button" onClick={() => setShowCur((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showCur ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>New Password</Label>
+              <div className="relative">
+                <Input type={showNew ? 'text' : 'password'} value={pwd.next} onChange={(e) => setPwd({ ...pwd, next: e.target.value })} placeholder="At least 8 characters" className="h-9 text-sm pr-9" />
+                <button type="button" onClick={() => setShowNew((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Confirm New Password</Label>
+              <Input type="password" value={pwd.confirm} onChange={(e) => setPwd({ ...pwd, confirm: e.target.value })} placeholder="Re-enter new password" className="h-9 text-sm" />
+            </div>
+            <Button size="sm" onClick={changePassword} disabled={changingPwd} className="mt-1">
+              {changingPwd ? 'Updating…' : 'Update Password'}
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              <CardTitle>Notification Settings</CardTitle>
-            </div>
-            <CardDescription>Manage how you receive notifications</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Email Notifications</Label>
-                <p className="text-sm text-muted-foreground">Receive email updates about cases</p>
-              </div>
-              <Switch
-                checked={settings.emailNotifications}
-                onCheckedChange={(checked) => handleNotificationChange('emailNotifications', checked)}
-              />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>SMS Notifications</Label>
-                <p className="text-sm text-muted-foreground">Receive SMS alerts for urgent updates</p>
-              </div>
-              <Switch
-                checked={settings.smsNotifications}
-                onCheckedChange={(checked) => handleNotificationChange('smsNotifications', checked)}
-              />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Push Notifications</Label>
-                <p className="text-sm text-muted-foreground">Receive browser push notifications</p>
-              </div>
-              <Switch
-                checked={settings.pushNotifications}
-                onCheckedChange={(checked) => handleNotificationChange('pushNotifications', checked)}
-              />
-            </div>
-
-            <Button onClick={handleSaveNotifications} disabled={isLoading} className="w-full">
-              {isLoading ? 'Saving...' : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Notification Settings
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              <CardTitle>Security Settings</CardTitle>
-            </div>
-            <CardDescription>Manage your account security</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Two-Factor Authentication</Label>
-                <p className="text-sm text-muted-foreground">Add an extra layer of security</p>
-              </div>
-              <Switch
-                checked={settings.twoFactorAuth}
-                onCheckedChange={(checked) => handleNotificationChange('twoFactorAuth', checked)}
-              />
-            </div>
-
-            <Separator />
-
-            <div className="space-y-4">
-              <Label>Change Password</Label>
-              <div className="space-y-2">
-                <Input
-                  type="password"
-                  placeholder="Current Password"
-                  value={settings.currentPassword}
-                  onChange={(e) => setSettings({ ...settings, currentPassword: e.target.value })}
-                />
-                <Input
-                  type="password"
-                  placeholder="New Password"
-                  value={settings.newPassword}
-                  onChange={(e) => setSettings({ ...settings, newPassword: e.target.value })}
-                />
-                <Input
-                  type="password"
-                  placeholder="Confirm New Password"
-                  value={settings.confirmPassword}
-                  onChange={(e) => setSettings({ ...settings, confirmPassword: e.target.value })}
-                />
-              </div>
-              <Button onClick={handlePasswordChange} disabled={isLoading} className="w-full">
-                {isLoading ? 'Updating...' : 'Change Password'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Globe className="h-5 w-5" />
-              <CardTitle>Regional Settings</CardTitle>
-            </div>
-            <CardDescription>Configure your regional preferences</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="language">Language</Label>
-              <select
-                id="language"
-                value={settings.language}
-                onChange={(e) => setSettings({ ...settings, language: e.target.value })}
-                className="w-full px-3 py-2 border rounded-md bg-background"
-              >
-                <option value="en">English</option>
-                <option value="hi">Hindi</option>
-                <option value="ta">Tamil</option>
-                <option value="te">Telugu</option>
-                <option value="mr">Marathi</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="timezone">Timezone</Label>
-              <select
-                id="timezone"
-                value={settings.timezone}
-                onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-                className="w-full px-3 py-2 border rounded-md bg-background"
-              >
-                <option value="Asia/Kolkata">India Standard Time (IST)</option>
-                <option value="Asia/Dubai">Gulf Standard Time (GST)</option>
-                <option value="UTC">Coordinated Universal Time (UTC)</option>
-              </select>
-            </div>
-
-            <Button className="w-full">
-              <Save className="h-4 w-4 mr-2" />
-              Save Regional Settings
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Smartphone className="h-5 w-5" />
-              <CardTitle>App Settings</CardTitle>
-            </div>
-            <CardDescription>Configure application preferences</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Dark Mode</Label>
-                <p className="text-sm text-muted-foreground">Use dark theme for the app</p>
-              </div>
-              <Switch />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Compact View</Label>
-                <p className="text-sm text-muted-foreground">Use compact layout for lists</p>
-              </div>
-              <Switch />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Auto-refresh</Label>
-                <p className="text-sm text-muted-foreground">Automatically refresh data every 30 seconds</p>
-              </div>
-              <Switch defaultChecked />
-            </div>
-
-            <Button className="w-full">
-              <Save className="h-4 w-4 mr-2" />
-              Save App Settings
-            </Button>
-          </CardContent>
-        </Card>
+      {/* Danger zone */}
+      <div className="bg-card border border-destructive/40 rounded-none overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-destructive/30 bg-destructive/5">
+          <div className="flex items-center gap-2">
+            <LogOut className="h-4 w-4 text-destructive" />
+            <h3 className="text-[13px] font-bold text-destructive">Danger Zone</h3>
+          </div>
+        </div>
+        <div className="px-5 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-[13px] font-semibold text-foreground">Sign Out</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">End your current session</p>
+          </div>
+          <Button size="sm" variant="destructive" onClick={() => setLogoutOpen(true)} className="gap-2">
+            <LogOut className="h-3.5 w-3.5" />Logout
+          </Button>
+        </div>
       </div>
 
-      <Card className="border-destructive">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <LogOut className="h-5 w-5 text-destructive" />
-            <CardTitle className="text-destructive">Danger Zone</CardTitle>
-          </div>
-          <CardDescription>Irreversible actions</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-destructive">Logout</Label>
-              <p className="text-sm text-muted-foreground">Sign out of your account</p>
-            </div>
-            <Button variant="destructive" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-destructive">Delete Account</Label>
-              <p className="text-sm text-muted-foreground">Permanently delete your account and data</p>
-            </div>
-            <Button variant="destructive" variant="outline">
-              Delete Account
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <LogoutConfirmDialog open={logoutOpen} onOpenChange={setLogoutOpen} onConfirm={logout} />
     </div>
   );
 }

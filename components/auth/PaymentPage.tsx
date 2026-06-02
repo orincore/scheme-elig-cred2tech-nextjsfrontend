@@ -1,35 +1,29 @@
 'use client';
 
-import { useState } from 'react';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Spinner } from '@/components/ui/spinner';
+import { AuthShell } from '@/components/auth/auth-shell';
+import { MsmeAuthBrand } from '@/components/auth/msme-auth-brand';
+import TravelingBorderButton from '@/components/ui/traveling-border-button';
 import { toast } from 'sonner';
 import { CheckCircle2, Lock } from 'lucide-react';
 
-export default function PaymentPage() {
-  const { completePayment, isLoading, userProfile } = useMsmeAuth();
-  const [selectedPlan, setSelectedPlan] = useState<'premium'>('premium');
+const PLAN = {
+  name: 'Registration',
+  price: '₹499',
+  period: '/one-time',
+  description: 'Complete your registration',
+  features: [
+    'Access to 100+ government schemes',
+    'Personalized scheme recommendations',
+    'Save unlimited schemes',
+    'Expert guidance & consulting',
+    'Priority support',
+    'Scheme comparison tools',
+  ],
+};
 
-  const plans = [
-    {
-      id: 'premium',
-      name: 'Registration',
-      price: '₹499',
-      period: '/one-time',
-      description: 'Complete your registration',
-      features: [
-        'Access to 100+ government schemes',
-        'Personalized scheme recommendations',
-        'Save unlimited schemes',
-        'Expert guidance & consulting',
-        'Priority support',
-        'Scheme comparison tools',
-      ],
-      popular: true,
-    },
-  ];
+export default function PaymentPage() {
+  const { completePayment, isLoading } = useMsmeAuth();
 
   const handlePayment = async () => {
     const success = await completePayment();
@@ -39,85 +33,69 @@ export default function PaymentPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen px-4 py-8">
-      <div className="w-full max-w-4xl space-y-6">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-foreground">Choose Your Plan</h1>
-          <p className="text-muted-foreground">
-            Select a plan to unlock unlimited access to government schemes
-          </p>
+    <AuthShell
+      brand={<MsmeAuthBrand />}
+      contentClassName="flex-1 flex flex-col px-6 py-8 md:px-16 lg:px-24 justify-center max-w-lg mx-auto w-full"
+    >
+      <div className="mb-8">
+        <h1 className="text-[28px] md:text-[34px] font-bold text-[#0a1628] dark:text-[#e6edf7] tracking-tight mb-2">
+          Activate your account
+        </h1>
+        <p className="text-[#4a5d73] dark:text-[#94a3b8] text-[14px] md:text-[15px]">
+          A one-time registration to unlock unlimited access to government schemes.
+        </p>
+      </div>
+
+      {/* Plan card */}
+      <div className="relative rounded-2xl border border-indigo-200/70 dark:border-indigo-900/50 bg-white dark:bg-[#162048] p-6 shadow-[0_10px_40px_rgba(79,70,229,0.12)]">
+        <div className="absolute -top-3 left-6">
+          <span className="rounded-full bg-indigo-600 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white shadow">
+            Most Popular
+          </span>
         </div>
 
-        {/* Plans Grid */}
-        <div className="flex justify-center">
-          {plans.map((plan) => (
-            <div key={plan.id} className="relative">
-              {plan.popular && (
-                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10">
-                  <div className="bg-accent text-accent-foreground px-3 py-1 rounded-full text-xs font-semibold">
-                    MOST POPULAR
-                  </div>
-                </div>
-              )}
+        <div className="pt-2">
+          <h3 className="text-xl font-bold text-[#0a1628] dark:text-[#e6edf7]">{PLAN.name}</h3>
+          <p className="text-[13px] text-[#4a5d73] dark:text-[#94a3b8] mt-0.5">{PLAN.description}</p>
+        </div>
 
-              <Card
-                className={`p-8 bg-card cursor-pointer transition-all ring-2 ring-primary shadow-lg ${
-                  plan.popular ? 'md:scale-105' : ''
-                }`}
-              >
-                <div className="space-y-6">
-                  {/* Plan Header */}
-                  <div>
-                    <h3 className="text-2xl font-bold text-foreground">{plan.name}</h3>
-                    <p className="text-muted-foreground text-sm mt-1">{plan.description}</p>
-                  </div>
+        <div className="mt-4 flex items-baseline gap-1">
+          <span className="text-4xl font-bold text-[#0a1628] dark:text-[#e6edf7]">{PLAN.price}</span>
+          <span className="text-[#4a5d73] dark:text-[#94a3b8]">{PLAN.period}</span>
+        </div>
 
-                  {/* Pricing */}
-                  <div>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-4xl font-bold text-foreground">{plan.price}</span>
-                      {plan.period && <span className="text-muted-foreground">{plan.period}</span>}
-                    </div>
-                  </div>
-
-                  {/* Features */}
-                  <ul className="space-y-3">
-                    {plan.features.map((feature, idx) => (
-                      <li key={idx} className="flex gap-3 items-start">
-                        <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                        <span className="text-sm text-foreground">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  {/* CTA Button */}
-                  <Button
-                    onClick={handlePayment}
-                    disabled={isLoading}
-                    className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Spinner className="mr-2" />
-                        Processing...
-                      </>
-                    ) : (
-                      'Proceed to Payment'
-                    )}
-                  </Button>
-                </div>
-              </Card>
-            </div>
+        <ul className="mt-5 space-y-2.5">
+          {PLAN.features.map((feature) => (
+            <li key={feature} className="flex items-start gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-px" />
+              <span className="text-[14px] text-[#0a1628]/90 dark:text-[#e6edf7]/90">{feature}</span>
+            </li>
           ))}
-        </div>
+        </ul>
 
-        {/* Security Info */}
-        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-          <Lock className="w-4 h-4" />
-          <span>Your payment is secure and encrypted</span>
+        <div className="mt-6">
+          <TravelingBorderButton
+            onClick={handlePayment}
+            disabled={isLoading}
+            solid
+            showIcon={!isLoading}
+            className="w-full py-3.5 text-[15px] rounded-[10px]"
+          >
+            {isLoading ? (
+              <div className="flex justify-center items-center w-full h-full">
+                <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+              </div>
+            ) : (
+              <span>Proceed to Payment</span>
+            )}
+          </TravelingBorderButton>
         </div>
       </div>
-    </div>
+
+      <div className="flex items-center justify-center gap-1.5 mt-8 text-[11px] text-[#4a5d73] dark:text-[#94a3b8]">
+        <Lock className="h-[13px] w-[13px] text-indigo-600" />
+        Your payment is secure and encrypted
+      </div>
+    </AuthShell>
   );
 }

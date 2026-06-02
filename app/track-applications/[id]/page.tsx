@@ -5,8 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { casesApi, API_BASE_URL } from '@/lib/services/api';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
@@ -28,7 +26,6 @@ import {
   MapPin,
   FileText,
   Clock,
-  CheckCircle,
   AlertCircle,
   User,
   Package,
@@ -37,68 +34,67 @@ import {
   Download,
   RefreshCw,
   FilePlus,
-  Inbox,
+  Hash,
+  Briefcase,
+  CreditCard,
+  Globe,
 } from 'lucide-react';
 import Link from 'next/link';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CaseDetails {
   id: string;
   caseNumber: string;
   case_number?: string;
-  businessName: string;
-  msme_name?: string;
   msmeName?: string;
-  status: string;
-  scheme: string;
-  scheme_name?: string;
-  schemeName?: string;
-  schemeId?: string;
-  assignedAt: string;
-  assigned_at?: string;
-  priority: string;
-  msme_email?: string;
+  msmeBusinessName?: string;
   msmeEmail?: string;
-  msme_mobile?: string;
+  msme_email?: string;
   msmeMobile?: string;
-  legal_name_of_business?: string;
-  trade_name_of_business?: string;
-  principal_city?: string;
+  msmePhone?: string;
+  msme_mobile?: string;
   msmeCity?: string;
-  principal_state?: string;
+  principal_city?: string;
   msmeState?: string;
-  business_type?: string;
+  principal_state?: string;
+  msmeAddress?: string;
+  principal_address?: string;
   msmeBusinessType?: string;
-  business_sector?: string;
+  business_type?: string;
   msmeBusinessSector?: string;
+  business_sector?: string;
+  schemeName?: string;
+  scheme_name?: string;
+  schemeId?: string;
+  status: string;
+  priority: string;
+  assignedAgentName?: string;
+  assignedAgentEmail?: string;
+  assignedAgentPhone?: string;
+  assignedAt?: string;
+  assigned_at?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  closedAt?: string;
+  closureReason?: string;
+  closureNotes?: string;
+  msmeNotes?: string;
+  agentNotes?: string;
+  adminNotes?: string;
   pan_number?: string;
   gstin?: string;
-  principal_address?: string;
   principal_pincode?: string;
   registration_date?: string;
   annual_turnover_range?: string;
   total_employees?: string;
-  msmeDetails?: {
-    name?: string;
+  legal_name_of_business?: string;
+  trade_name_of_business?: string;
+  agent?: {
+    fullName: string;
     email?: string;
     phone?: string;
-    address?: string;
-    pincode?: string;
-    city?: string;
-    principal_city?: string;
-    state?: string;
-    principal_state?: string;
-    pan?: string;
-    pan_number?: string;
-    gst?: string;
-    legal_name_of_business?: string;
-    trade_name_of_business?: string;
-    business_type?: string;
-    business_sector?: string;
-    registration_date?: string;
-    annual_turnover?: string;
-    employee_count?: string;
   };
   schemeDetails?: {
     name?: string;
@@ -117,18 +113,12 @@ interface CaseDetails {
     oldValue?: any;
     newValue?: any;
   }>;
-  agent?: {
-    fullName: string;
-    email: string;
-    phone: string;
-  };
 }
 
 interface DocumentRequest {
   id: string;
   case_id: string;
   case_number?: string;
-  scheme_name?: string;
   document_name: string;
   description?: string;
   status: 'PENDING' | 'UPLOADED' | 'CANCELLED';
@@ -136,7 +126,83 @@ interface DocumentRequest {
   fulfilled_at?: string;
   agent_name?: string;
   file_url?: string;
-  uploaded_file_name?: string;
+}
+
+// ── Style helpers ─────────────────────────────────────────────────────────────
+
+const STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  NEW:               { label: 'New',          cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  ASSIGNED:          { label: 'Assigned',     cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+  IN_PROGRESS:       { label: 'In Progress',  cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  PENDING_DOCS:      { label: 'Docs Pending', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+  DOCUMENTS_PENDING: { label: 'Docs Pending', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+  UNDER_REVIEW:      { label: 'Under Review', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  APPROVED:          { label: 'Approved',     cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  CLOSED:            { label: 'Closed',       cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  REJECTED:          { label: 'Rejected',     cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  ESCALATED:         { label: 'Escalated',    cls: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300' },
+};
+
+const PRIORITY_CFG: Record<string, { cls: string }> = {
+  HIGH:   { cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  MEDIUM: { cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  LOW:    { cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  URGENT: { cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+};
+
+const DOC_STATUS_CFG: Record<string, string> = {
+  PENDING:   'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  UPLOADED:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+  CANCELLED: 'bg-muted text-muted-foreground',
+};
+
+const TIMELINE_DOT: Record<string, string> = {
+  CASE_CREATED:       'bg-blue-500',
+  ASSIGNED:           'bg-purple-500',
+  STATUS_CHANGED:     'bg-amber-500',
+  NOTE_ADDED:         'bg-gray-400',
+  DOCUMENT_REQUESTED: 'bg-orange-500',
+  DOCUMENT_UPLOADED:  'bg-green-500',
+  CASE_CLOSED:        'bg-green-600',
+  CASE_REJECTED:      'bg-red-500',
+};
+
+function StatusPill({ status }: { status: string }) {
+  const cfg = STATUS_CFG[status] ?? { label: status.replace(/_/g, ' '), cls: 'bg-muted text-muted-foreground' };
+  return <span className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>;
+}
+
+function PriorityPill({ priority }: { priority: string }) {
+  const cfg = PRIORITY_CFG[priority] ?? { cls: 'bg-muted text-muted-foreground' };
+  return <span className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${cfg.cls}`}>{priority}</span>;
+}
+
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-start gap-4 py-2.5 border-b border-border last:border-0">
+      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.06em] w-36 shrink-0 pt-0.5">{label}</span>
+      <span className="text-sm text-foreground flex-1">{value}</span>
+    </div>
+  );
+}
+
+function SectionBox({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
+  return (
+    <div className="bg-card border border-border rounded-none overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-border bg-background">
+        <h3 className="text-[13px] font-bold text-foreground flex items-center gap-2">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          {title}
+        </h3>
+      </div>
+      <div className="px-5 py-2">{children}</div>
+    </div>
+  );
+}
+
+function formatAction(action: string): string {
+  return action.split('_').map((w) => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
 }
 
 function formatBytes(bytes: number): string {
@@ -145,49 +211,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatAction(action: string): string {
-  return action
-    .split('_')
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(' ');
-}
-
-function statusColor(status: string) {
-  switch (status) {
-    case 'NEW':               return 'bg-blue-100 text-blue-800';
-    case 'ASSIGNED':          return 'bg-purple-100 text-purple-800';
-    case 'IN_PROGRESS':       return 'bg-yellow-100 text-yellow-800';
-    case 'PENDING_DOCS':
-    case 'DOCUMENTS_PENDING': return 'bg-orange-100 text-orange-800';
-    case 'UNDER_REVIEW':      return 'bg-indigo-100 text-indigo-800';
-    case 'APPROVED':          return 'bg-green-100 text-green-800';
-    case 'CLOSED':            return 'bg-gray-100 text-gray-800';
-    case 'REJECTED':          return 'bg-red-100 text-red-800';
-    case 'ESCALATED':         return 'bg-pink-100 text-pink-800';
-    default:                  return 'bg-gray-100 text-gray-800';
-  }
-}
-
-function priorityColor(priority: string) {
-  switch (priority) {
-    case 'URGENT': return 'text-red-700 bg-red-50';
-    case 'HIGH':   return 'text-red-600 bg-red-50';
-    case 'MEDIUM': return 'text-yellow-600 bg-yellow-50';
-    case 'LOW':    return 'text-green-600 bg-green-50';
-    default:       return 'text-gray-600 bg-gray-50';
-  }
-}
-
-function requestStatusBadge(status: string) {
-  switch (status) {
-    case 'PENDING':   return 'bg-orange-100 text-orange-800';
-    case 'UPLOADED':  return 'bg-green-100 text-green-800';
-    case 'CANCELLED': return 'bg-gray-100 text-gray-600';
-    default:          return 'bg-gray-100 text-gray-800';
-  }
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MsmeCaseDetailPage() {
   const params  = useParams();
@@ -195,28 +219,23 @@ export default function MsmeCaseDetailPage() {
   const { userId, authStep } = useMsmeAuth();
   const caseId  = params.id as string;
 
-  console.log('MsmeCaseDetailPage mounted:', { caseId, userId });
-
-  // ── Core state ──────────────────────────────────────────────────────────────
   const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
   const [isLoading, setIsLoading]     = useState(true);
   const [error, setError]             = useState<string | null>(null);
 
-  // ── Document requests state ──────────────────────────────────────────────────
-  const [docRequests, setDocRequests]         = useState<DocumentRequest[]>([]);
-  const [reqsLoading, setReqsLoading]         = useState(false);
+  const [docRequests, setDocRequests] = useState<DocumentRequest[]>([]);
+  const [reqsLoading, setReqsLoading] = useState(false);
 
-  // ── Upload-document dialog ───────────────────────────────────────────────────
-  const [uploadOpen, setUploadOpen]   = useState(false);
-  const [uploadFile, setUploadFile]   = useState<File | null>(null);
-  const [uploading, setUploading]     = useState(false);
+  const [uploadOpen, setUploadOpen]     = useState(false);
+  const [uploadFile, setUploadFile]     = useState<File | null>(null);
+  const [uploading, setUploading]       = useState(false);
   const [activeRequest, setActiveRequest] = useState<DocumentRequest | null>(null);
-  const fileInputRef                  = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Fetch case details ───────────────────────────────────────────────────────
-  const fetchCaseDetails = async (showSpinner = false) => {
+  // ── Data fetching ──────────────────────────────────────────────────────────
+
+  const fetchCaseDetails = async () => {
     if (!caseId || !userId) return;
-    if (showSpinner) setIsLoading(true);
     try {
       const res = await casesApi.getMsmeCaseDetails(caseId, parseInt(userId));
       if (res.success) {
@@ -236,57 +255,39 @@ export default function MsmeCaseDetailPage() {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load case details');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    const load = async () => {
-      const msmeUserId = userId ? parseInt(userId) : null;
-      console.log('Loading case details:', { caseId, msmeUserId });
-      if (!msmeUserId) { setIsLoading(false); return; }
-      await Promise.all([fetchCaseDetails(true), fetchDocumentRequests()]);
-      setIsLoading(false);
-    };
-    if (authStep === 'authenticated') {
-      load();
-    }
-  }, [authStep, userId, caseId]);
-
-  // ── Fetch document requests ──────────────────────────────────────────────────
   const fetchDocumentRequests = async () => {
     if (!userId) return;
     setReqsLoading(true);
     try {
       const res = await casesApi.getMsmeDocumentRequests(parseInt(userId));
       if (res.success) {
-        // Filter requests for this specific case
-        const caseReqs = (res.requests || []).filter((r: DocumentRequest) => 
-          String(r.case_id) === String(caseId)
+        setDocRequests(
+          (res.requests || []).filter((r: DocumentRequest) => String(r.case_id) === String(caseId))
         );
-        setDocRequests(caseReqs);
       }
     } catch (err: any) {
-      console.error('Failed to load document requests:', err.message || err);
+      console.error('Failed to load document requests:', err.message);
     } finally {
       setReqsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (userId && caseId) {
-      fetchDocumentRequests();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, caseId]);
+    const load = async () => {
+      if (!userId) { setIsLoading(false); return; }
+      await Promise.all([fetchCaseDetails(), fetchDocumentRequests()]);
+      setIsLoading(false);
+    };
+    if (authStep === 'authenticated') load();
+  }, [authStep, userId, caseId]);
 
-  // ── Upload handler ───────────────────────────────────────────────────────────
+  // ── Upload ─────────────────────────────────────────────────────────────────
+
   const handleUpload = async () => {
-    if (!uploadFile || !activeRequest || !userId) { 
-      toast.error('Please select a file'); 
-      return; 
-    }
+    if (!uploadFile || !activeRequest || !userId) { toast.error('Please select a file'); return; }
     setUploading(true);
     try {
       await casesApi.fulfillDocumentRequest(activeRequest.id, parseInt(userId), uploadFile);
@@ -295,8 +296,7 @@ export default function MsmeCaseDetailPage() {
       setUploadFile(null);
       setActiveRequest(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      await fetchDocumentRequests();
-      await fetchCaseDetails();
+      await Promise.all([fetchDocumentRequests(), fetchCaseDetails()]);
     } catch (err: any) {
       toast.error(err.message || 'Upload failed. Please try again.');
     } finally {
@@ -310,19 +310,26 @@ export default function MsmeCaseDetailPage() {
     setUploadOpen(true);
   };
 
-  // ── Loading / error states ───────────────────────────────────────────────────
+  // ── Guards ─────────────────────────────────────────────────────────────────
+
   if (isLoading) {
     return (
       <DashboardLayout>
-        <div className="container mx-auto p-6 space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <div className="grid gap-6">
-            <Skeleton className="h-64" />
-            <div className="grid md:grid-cols-2 gap-6">
-              <Skeleton className="h-64" />
-              <Skeleton className="h-64" />
+        <div className="space-y-5">
+          <div className="border-b-2 border-border pb-5 space-y-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-8 w-56" />
+            <div className="flex gap-3">
+              <Skeleton className="h-6 w-20 rounded-full" />
+              <Skeleton className="h-6 w-16 rounded-full" />
             </div>
           </div>
+          <div className="grid md:grid-cols-2 gap-5">
+            <Skeleton className="h-48" />
+            <Skeleton className="h-48" />
+          </div>
+          <Skeleton className="h-64" />
+          <Skeleton className="h-48" />
         </div>
       </DashboardLayout>
     );
@@ -331,444 +338,513 @@ export default function MsmeCaseDetailPage() {
   if (error || !caseDetails) {
     return (
       <DashboardLayout>
-        <div className="container mx-auto p-6">
-          <div className="text-center py-12">
-            <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
-            <h2 className="text-xl font-semibold mb-2">Error Loading Case</h2>
-            <p className="text-muted-foreground mb-4">{error || 'Case not found'}</p>
-            <Link href="/track-applications">
-              <Button>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Applications
-              </Button>
-            </Link>
-          </div>
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+          <h2 className="text-lg font-semibold mb-1">Error Loading Case</h2>
+          <p className="text-sm text-muted-foreground mb-6">{error || 'Case not found'}</p>
+          <Link href="/track-applications">
+            <Button size="sm">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Applications
+            </Button>
+          </Link>
         </div>
       </DashboardLayout>
     );
   }
 
-  // ── Derived values ───────────────────────────────────────────────────────────
-  const caseNumber   = caseDetails.caseNumber || caseDetails.case_number;
-  const businessName = caseDetails.businessName || caseDetails.msme_name || caseDetails.msmeName;
-  const scheme       = caseDetails.scheme || caseDetails.scheme_name || caseDetails.schemeName || caseDetails.schemeId;
-  const assignedAt   = caseDetails.assignedAt || caseDetails.assigned_at;
+  // ── Derive display values ──────────────────────────────────────────────────
 
-  const msme = {
-    name:     caseDetails.msmeDetails?.name      || caseDetails.msmeName   || businessName,
-    email:    caseDetails.msmeDetails?.email     || caseDetails.msme_email  || caseDetails.msmeEmail,
-    phone:    caseDetails.msmeDetails?.phone     || caseDetails.msme_mobile || caseDetails.msmeMobile,
-    address:  caseDetails.msmeDetails?.address   || caseDetails.principal_address,
-    pincode:  caseDetails.msmeDetails?.pincode   || caseDetails.principal_pincode,
-    city:     caseDetails.msmeDetails?.city      || caseDetails.msmeDetails?.principal_city  || caseDetails.principal_city  || caseDetails.msmeCity,
-    state:    caseDetails.msmeDetails?.state     || caseDetails.msmeDetails?.principal_state || caseDetails.principal_state || caseDetails.msmeState,
-    pan:      caseDetails.msmeDetails?.pan       || caseDetails.msmeDetails?.pan_number || caseDetails.pan_number,
-    gst:      caseDetails.msmeDetails?.gst       || caseDetails.gstin,
-    legalName:   caseDetails.msmeDetails?.legal_name_of_business  || caseDetails.legal_name_of_business,
-    tradeName:   caseDetails.msmeDetails?.trade_name_of_business  || caseDetails.trade_name_of_business,
-    bizType:     caseDetails.msmeDetails?.business_type   || caseDetails.business_type  || caseDetails.msmeBusinessType,
-    bizSector:   caseDetails.msmeDetails?.business_sector || caseDetails.business_sector || caseDetails.msmeBusinessSector,
-    regDate:     caseDetails.msmeDetails?.registration_date || caseDetails.registration_date,
-    turnover:    caseDetails.msmeDetails?.annual_turnover  || caseDetails.annual_turnover_range,
-    employees:   caseDetails.msmeDetails?.employee_count   || caseDetails.total_employees,
-  };
+  const caseNumber  = caseDetails.caseNumber || caseDetails.case_number || '—';
+  const schemeName  = caseDetails.schemeName || caseDetails.scheme_name || caseDetails.schemeId || '—';
+  const bizName     = caseDetails.msmeBusinessName || caseDetails.msmeName || '—';
+  const agentName   = caseDetails.agent?.fullName || caseDetails.assignedAgentName;
+  const agentEmail  = caseDetails.agent?.email    || caseDetails.assignedAgentEmail;
+  const agentPhone  = caseDetails.agent?.phone    || caseDetails.assignedAgentPhone;
+  const email       = caseDetails.msmeEmail  || caseDetails.msme_email;
+  const phone       = caseDetails.msmeMobile || caseDetails.msmePhone || caseDetails.msme_mobile;
+  const city        = caseDetails.msmeCity        || caseDetails.principal_city;
+  const state       = caseDetails.msmeState       || caseDetails.principal_state;
+  const address     = caseDetails.msmeAddress     || caseDetails.principal_address;
+  const bizType     = caseDetails.msmeBusinessType  || caseDetails.business_type;
+  const bizSector   = caseDetails.msmeBusinessSector || caseDetails.business_sector;
+  const legalName   = caseDetails.legal_name_of_business;
+  const tradeName   = caseDetails.trade_name_of_business;
+  const appliedDate = caseDetails.createdAt ? new Date(caseDetails.createdAt).toLocaleDateString() : '—';
+  const updatedDate = caseDetails.updatedAt ? new Date(caseDetails.updatedAt).toLocaleDateString() : '—';
 
   const pendingRequests = docRequests.filter((r) => r.status === 'PENDING');
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <DashboardLayout>
-      <div className="container mx-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <Link href="/track-applications">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Applications
-            </Button>
+      <div className="space-y-5">
+
+        {/* ─── Page Header ────────────────────────────────────────────────── */}
+        <div className="border-b-2 border-border pb-5">
+          <Link
+            href="/track-applications"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors mb-3"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Applications
           </Link>
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold">Case Details</h1>
-            <p className="text-muted-foreground">View your application progress and timeline</p>
+
+          <p className="text-[11px] font-bold text-primary uppercase tracking-[0.1em] mb-1">
+            Case Details
+          </p>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-foreground font-mono">
+                {caseNumber}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-0.5">{schemeName}</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <StatusPill status={caseDetails.status} />
+              {pendingRequests.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wider bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 px-2 py-0.5 rounded-full">
+                  <AlertCircle className="h-3 w-3" />
+                  {pendingRequests.length} doc{pendingRequests.length > 1 ? 's' : ''} needed
+                </span>
+              )}
+              {caseDetails.schemeId && (
+                <button
+                  onClick={() => router.push(`/scheme/${caseDetails.schemeId}`)}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
+                >
+                  <Package className="h-3 w-3" />
+                  View Scheme
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Inline stats */}
+          <div className="flex items-center gap-5 mt-5 flex-wrap">
+            <div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Applied</p>
+              <p className="text-base font-bold text-foreground">{appliedDate}</p>
+            </div>
+            <div className="w-px h-8 bg-border" />
+            <div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Last Updated</p>
+              <p className="text-base font-bold text-foreground">{updatedDate}</p>
+            </div>
+            {caseDetails.closedAt && (
+              <>
+                <div className="w-px h-8 bg-border" />
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Closed</p>
+                  <p className="text-base font-bold text-foreground">
+                    {new Date(caseDetails.closedAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </>
+            )}
+            {agentName && (
+              <>
+                <div className="w-px h-8 bg-border" />
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Agent</p>
+                  <p className="text-base font-bold text-foreground">{agentName}</p>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Case Overview */}
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-start flex-wrap gap-3">
-              <div>
-                <CardTitle className="text-2xl mb-2">{caseNumber}</CardTitle>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Badge className={statusColor(caseDetails.status)}>
-                    {caseDetails.status.replace(/_/g, ' ')}
-                  </Badge>
-                  <Badge variant="outline" className={priorityColor(caseDetails.priority)}>
-                    {caseDetails.priority} Priority
-                  </Badge>
-                  {pendingRequests.length > 0 && (
-                    <Badge className="bg-orange-100 text-orange-800">
-                      {pendingRequests.length} pending document request{pendingRequests.length > 1 ? 's' : ''}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Calendar className="h-4 w-4" />
-                <span>Applied: {assignedAt ? new Date(assignedAt).toLocaleDateString() : 'N/A'}</span>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  Business Information
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div><span className="text-muted-foreground">Business Name:</span><span className="ml-2 font-medium">{businessName}</span></div>
-                  <div><span className="text-muted-foreground">Scheme:</span><span className="ml-2 font-medium">{scheme}</span></div>
-                  {caseDetails.agent && (
-                    <div><span className="text-muted-foreground">Assigned Agent:</span><span className="ml-2 font-medium">{caseDetails.agent.fullName}</span></div>
-                  )}
-                </div>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  Contact Information
-                </h3>
-                <div className="space-y-2 text-sm">
-                  {msme.email && (
-                    <div className="flex items-center gap-2">
-                      <Mail className="h-4 w-4 text-muted-foreground" />
-                      <span>{msme.email}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{msme.phone || 'N/A'}</span>
-                  </div>
-                  {(msme.city || msme.state) && (
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-muted-foreground" />
-                      <span>{[msme.city, msme.state].filter(Boolean).join(', ')}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Pending Document Requests Banner */}
+        {/* ─── Pending docs action banner ──────────────────────────────────── */}
         {pendingRequests.length > 0 && (
-          <Card className="border-orange-200 bg-orange-50">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-orange-800">
-                <Inbox className="h-5 w-5" />
-                Action Required: Document Requests
-                <Badge className="bg-orange-200 text-orange-900 ml-1">
-                  {pendingRequests.length} pending
-                </Badge>
-              </CardTitle>
-              <CardDescription className="text-orange-700">
-                Your assigned agent has requested the following documents. Please upload them to continue processing your application.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {pendingRequests.map((req) => (
-                  <div
-                    key={req.id}
-                    className="flex items-center justify-between p-4 bg-white border border-orange-100 rounded-lg"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
-                        <FilePlus className="h-5 w-5 text-orange-700" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm">{req.document_name}</p>
-                        {req.description && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{req.description}</p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          Requested by {req.agent_name || 'Agent'} · {new Date(req.requested_at).toLocaleDateString()}
-                        </p>
-                      </div>
+          <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/60 rounded-none p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400 shrink-0" />
+              <span className="text-sm font-semibold text-orange-800 dark:text-orange-300">
+                Action Required — Your agent has requested {pendingRequests.length} document{pendingRequests.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {pendingRequests.map((req) => (
+                <div
+                  key={req.id}
+                  className="flex items-center justify-between bg-white dark:bg-card border border-orange-100 dark:border-orange-900/40 px-3 py-2.5"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FilePlus className="h-4 w-4 text-orange-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{req.document_name}</p>
+                      {req.description && <p className="text-xs text-muted-foreground mt-0.5">{req.description}</p>}
+                      <p className="text-xs text-muted-foreground">
+                        {req.agent_name ? `Requested by ${req.agent_name} · ` : ''}
+                        {new Date(req.requested_at).toLocaleDateString()}
+                      </p>
                     </div>
-                    <Button
-                      size="sm"
-                      className="gap-2 flex-shrink-0 bg-orange-600 hover:bg-orange-700"
-                      onClick={() => openUploadDialog(req)}
-                    >
-                      <Upload className="h-4 w-4" />
-                      Upload
-                    </Button>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <Button
+                    size="sm"
+                    className="gap-1.5 bg-orange-600 hover:bg-orange-700 text-white shrink-0 ml-4"
+                    onClick={() => openUploadDialog(req)}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
-        {/* Scheme Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Scheme Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <span className="text-muted-foreground">Scheme Name:</span>
-              <span className="ml-2 font-medium text-lg">{scheme}</span>
-            </div>
-            {caseDetails.schemeDetails?.description && (
-              <div>
-                <p className="text-muted-foreground mb-1">Description</p>
-                <p className="text-sm">{caseDetails.schemeDetails.description}</p>
+        {/* ─── Two-column layout: case info + business/agent ───────────────── */}
+        <div className="grid md:grid-cols-2 gap-5">
+
+          {/* Case & Scheme info */}
+          <SectionBox title="Case & Scheme" icon={Package}>
+            <InfoRow label="Case Number" value={caseNumber} />
+            <InfoRow label="Scheme" value={schemeName} />
+            <InfoRow label="Status" value={STATUS_CFG[caseDetails.status]?.label ?? caseDetails.status} />
+            <InfoRow label="Applied On" value={appliedDate} />
+            <InfoRow label="Last Updated" value={updatedDate} />
+            {caseDetails.closedAt && (
+              <InfoRow label="Closed On" value={new Date(caseDetails.closedAt).toLocaleDateString()} />
+            )}
+            {caseDetails.closureReason && (
+              <InfoRow label="Closure Reason" value={caseDetails.closureReason} />
+            )}
+            {caseDetails.closureNotes && (
+              <InfoRow label="Closure Notes" value={caseDetails.closureNotes} />
+            )}
+          </SectionBox>
+
+          {/* Agent info */}
+          <SectionBox title="Assigned Agent" icon={User}>
+            {agentName ? (
+              <>
+                <InfoRow label="Name" value={agentName} />
+                <InfoRow label="Email" value={agentEmail} />
+                <InfoRow label="Phone" value={agentPhone} />
+              </>
+            ) : (
+              <div className="py-6 text-center">
+                <User className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No agent assigned yet</p>
+                <p className="text-xs text-muted-foreground mt-0.5">You will be notified when one is assigned</p>
               </div>
             )}
-            {caseDetails.schemeDetails?.eligibility?.length ? (
-              <div>
-                <p className="text-muted-foreground font-medium mb-1">Eligibility Criteria</p>
-                <ul className="list-disc list-inside text-sm space-y-1">
-                  {caseDetails.schemeDetails.eligibility.map((item, i) => <li key={i}>{item}</li>)}
-                </ul>
-              </div>
-            ) : null}
-            {caseDetails.schemeDetails?.documents_required?.length ? (
-              <div>
-                <p className="text-muted-foreground font-medium mb-1">Required Documents</p>
-                <ul className="list-disc list-inside text-sm space-y-1">
-                  {caseDetails.schemeDetails.documents_required.map((item, i) => <li key={i}>{item}</li>)}
-                </ul>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+          </SectionBox>
+        </div>
 
-        {/* Document Requests History */}
+        {/* ─── Business / MSME info ─────────────────────────────────────────── */}
+        <div className="grid md:grid-cols-2 gap-5">
+
+          {/* Contact */}
+          <SectionBox title="Contact Information" icon={Building2}>
+            <InfoRow label="Business Name"  value={bizName} />
+            <InfoRow label="Legal Name"     value={legalName} />
+            <InfoRow label="Trade Name"     value={tradeName} />
+            <InfoRow label="Email"          value={email} />
+            <InfoRow label="Phone"          value={phone} />
+            <InfoRow label="City"           value={city} />
+            <InfoRow label="State"          value={state} />
+            <InfoRow label="Address"        value={address} />
+            <InfoRow label="Pincode"        value={caseDetails.principal_pincode} />
+          </SectionBox>
+
+          {/* Business details */}
+          <SectionBox title="Business Details" icon={Briefcase}>
+            <InfoRow label="Business Type"   value={bizType} />
+            <InfoRow label="Business Sector" value={bizSector} />
+            <InfoRow label="PAN"             value={caseDetails.pan_number} />
+            <InfoRow label="GSTIN"           value={caseDetails.gstin} />
+            <InfoRow label="Reg. Date"       value={caseDetails.registration_date ? new Date(caseDetails.registration_date).toLocaleDateString() : undefined} />
+            <InfoRow label="Annual Turnover" value={caseDetails.annual_turnover_range} />
+            <InfoRow label="Employees"       value={caseDetails.total_employees?.toString()} />
+          </SectionBox>
+        </div>
+
+        {/* ─── Notes from agent / admin ────────────────────────────────────── */}
+        {(caseDetails.agentNotes || caseDetails.msmeNotes) && (
+          <SectionBox title="Notes" icon={FileText}>
+            {caseDetails.agentNotes && (
+              <div className="py-2.5 border-b border-border last:border-0">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-1">From Agent</p>
+                <p className="text-sm text-foreground">{caseDetails.agentNotes}</p>
+              </div>
+            )}
+            {caseDetails.msmeNotes && (
+              <div className="py-2.5 border-b border-border last:border-0">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-1">Your Notes</p>
+                <p className="text-sm text-foreground">{caseDetails.msmeNotes}</p>
+              </div>
+            )}
+          </SectionBox>
+        )}
+
+        {/* ─── Scheme details ───────────────────────────────────────────────── */}
+        {caseDetails.schemeDetails && (caseDetails.schemeDetails.description || (caseDetails.schemeDetails.benefits?.length ?? 0) > 0 || (caseDetails.schemeDetails.documents_required?.length ?? 0) > 0) && (
+          <SectionBox title="Scheme Details" icon={Package}>
+            {caseDetails.schemeDetails.description && (
+              <div className="py-2.5 border-b border-border">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-1">Description</p>
+                <p className="text-sm text-foreground">{caseDetails.schemeDetails.description}</p>
+              </div>
+            )}
+            {(caseDetails.schemeDetails.benefits?.length ?? 0) > 0 && (
+              <div className="py-2.5 border-b border-border">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-2">Benefits</p>
+                <ul className="space-y-1">
+                  {caseDetails.schemeDetails!.benefits!.map((b, i) => (
+                    <li key={i} className="text-sm text-foreground flex gap-2">
+                      <span className="text-primary mt-0.5">·</span>{b}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(caseDetails.schemeDetails.documents_required?.length ?? 0) > 0 && (
+              <div className="py-2.5">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-2">Required Documents</p>
+                <ul className="space-y-1">
+                  {caseDetails.schemeDetails!.documents_required!.map((d, i) => (
+                    <li key={i} className="text-sm text-foreground flex gap-2">
+                      <span className="text-primary mt-0.5">·</span>{d}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </SectionBox>
+        )}
+
+        {/* ─── Document Requests Table ──────────────────────────────────────── */}
         {docRequests.length > 0 && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Inbox className="h-5 w-5" />
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-[13px] font-bold text-foreground flex items-center gap-2">
+                  <FilePlus className="h-4 w-4 text-muted-foreground" />
                   Document Requests
                   {pendingRequests.length > 0 && (
-                    <Badge className="bg-orange-100 text-orange-800 ml-1">{pendingRequests.length} pending</Badge>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 px-2 py-0.5 rounded-full">
+                      {pendingRequests.length} pending
+                    </span>
                   )}
-                </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={fetchDocumentRequests}
-                  disabled={reqsLoading}
-                  className="gap-1"
-                >
-                  <RefreshCw className={`h-4 w-4 ${reqsLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Documents requested by your agent for this case</p>
               </div>
-            </CardHeader>
-            <CardContent>
-              {reqsLoading ? (
-                <div className="space-y-3">
-                  {[1, 2].map((n) => <Skeleton key={n} className="h-16 w-full" />)}
-                </div>
-              ) : (
-                <div className="space-y-3">
+              <button
+                disabled={reqsLoading}
+                onClick={fetchDocumentRequests}
+                className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${reqsLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+            <div className="overflow-auto">
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+                <thead>
+                  <tr className="bg-background border-b-2 border-border">
+                    {['Document', 'Status', 'Requested', 'Action'].map((h) => (
+                      <th key={h} className="px-5 py-3 text-left text-[10px] font-extrabold text-muted-foreground uppercase tracking-[0.1em]">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
                   {docRequests.map((req) => (
-                    <div
-                      key={req.id}
-                      className="flex items-center justify-between p-4 border rounded-lg bg-muted/20"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                          <FilePlus className="h-5 w-5 text-blue-600" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <p className="font-medium text-sm truncate">{req.document_name}</p>
-                            <Badge className={`text-xs ${requestStatusBadge(req.status)}`}>
-                              {req.status}
-                            </Badge>
-                          </div>
-                          {req.description && (
-                            <p className="text-xs text-muted-foreground truncate">{req.description}</p>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            Requested {new Date(req.requested_at).toLocaleDateString()}
-                            {req.fulfilled_at ? ` · Fulfilled ${new Date(req.fulfilled_at).toLocaleDateString()}` : ''}
+                    <tr key={req.id} className="border-b border-border hover:bg-muted/10 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm font-medium text-foreground">{req.document_name}</p>
+                        {req.description && (
+                          <p className="text-xs text-muted-foreground mt-0.5 max-w-[280px]">{req.description}</p>
+                        )}
+                        {req.agent_name && (
+                          <p className="text-xs text-muted-foreground mt-0.5">By {req.agent_name}</p>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${DOC_STATUS_CFG[req.status] ?? 'bg-muted text-muted-foreground'}`}>
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm text-foreground">{new Date(req.requested_at).toLocaleDateString()}</p>
+                        {req.fulfilled_at && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Uploaded {new Date(req.fulfilled_at).toLocaleDateString()}
                           </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0">
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
                         {req.status === 'PENDING' && (
-                          <Button size="sm" className="gap-2" onClick={() => openUploadDialog(req)}>
-                            <Upload className="h-4 w-4" />
+                          <button
+                            onClick={() => openUploadDialog(req)}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
+                          >
+                            <Upload className="h-3 w-3" />
                             Upload
-                          </Button>
+                          </button>
                         )}
                         {req.status === 'UPLOADED' && req.file_url && (
-                          <a href={`${API_BASE_URL}${req.file_url}`} target="_blank" rel="noopener noreferrer">
-                            <Button variant="ghost" size="sm" className="gap-1">
-                              <Download className="h-4 w-4" />
-                              View
-                            </Button>
+                          <a
+                            href={`${API_BASE_URL}${req.file_url}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-foreground bg-muted/30 hover:bg-muted/60 transition-colors"
+                          >
+                            <Download className="h-3 w-3" />
+                            View File
                           </a>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Timeline ─────────────────────────────────────────────────────── */}
+        <div className="bg-card border border-border rounded-none overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border">
+            <h3 className="text-[13px] font-bold text-foreground flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              Case Timeline
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Full history of actions on this case</p>
+          </div>
+
+          <div className="px-5 py-4">
+            {caseDetails.timeline && caseDetails.timeline.length > 0 ? (
+              <div className="space-y-0">
+                {caseDetails.timeline.map((item, index) => {
+                  const dotColor = TIMELINE_DOT[item.action] ?? 'bg-muted-foreground/40';
+                  const isLast   = index === caseDetails.timeline!.length - 1;
+                  return (
+                    <div key={item.id} className="flex gap-4">
+                      {/* Dot + connector */}
+                      <div className="flex flex-col items-center pt-1.5">
+                        <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotColor}`} />
+                        {!isLast && <div className="w-px flex-1 bg-border mt-1 min-h-[24px]" />}
+                      </div>
+                      {/* Content */}
+                      <div className={`flex-1 pb-5 ${isLast ? '' : ''}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{formatAction(item.action)}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">by {item.performedBy || 'System'}</p>
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            {item.timestamp ? new Date(item.timestamp).toLocaleString() : ''}
+                          </span>
+                        </div>
+                        {item.action === 'STATUS_CHANGED' && item.newValue && (
+                          <div className="mt-1.5">
+                            <span className="text-xs text-muted-foreground">New status: </span>
+                            <span className="text-xs font-semibold text-foreground">
+                              {typeof item.newValue === 'object'
+                                ? (item.newValue.status || item.newValue.newStatus || JSON.stringify(item.newValue))
+                                : String(item.newValue)}
+                            </span>
+                          </div>
+                        )}
+                        {item.notes && (
+                          <p className="text-xs text-foreground/70 mt-1.5 bg-muted/40 rounded px-2.5 py-1.5">
+                            {item.notes}
+                          </p>
                         )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Timeline */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Case Timeline
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {caseDetails.timeline && caseDetails.timeline.length > 0 ? (
-              <div className="space-y-4">
-                {caseDetails.timeline.map((item, index) => (
-                  <div key={item.id} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${index === 0 ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
-                      {index < caseDetails.timeline!.length - 1 && (
-                        <div className="w-0.5 flex-1 bg-border mt-1" />
-                      )}
-                    </div>
-                    <div className="flex-1 pb-4">
-                      <div className="flex justify-between items-start mb-0.5">
-                        <p className="font-medium text-sm">{formatAction(item.action)}</p>
-                        <span className="text-xs text-muted-foreground ml-3 flex-shrink-0">
-                          {new Date(item.timestamp).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">by {item.performedBy || 'System'}</p>
-                      {item.action === 'STATUS_CHANGED' && item.newValue && (
-                        <div className="mt-1">
-                          <span className="text-xs font-medium text-foreground">Status: </span>
-                          <span className="text-xs text-primary font-medium">
-                            {typeof item.newValue === 'object' 
-                              ? (item.newValue.status || item.newValue.newStatus || JSON.stringify(item.newValue))
-                              : String(item.newValue)}
-                          </span>
-                        </div>
-                      )}
-                      {item.notes && (
-                        <p className="text-xs text-foreground/70 mt-1 bg-muted/40 rounded px-2 py-1">{item.notes}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
-              <div className="text-center py-10 text-muted-foreground">
-                <Clock className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                <p className="text-sm">No timeline events yet.</p>
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <Clock className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                <p className="text-sm text-muted-foreground">No timeline events yet</p>
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Upload Document Dialog */}
-        <Dialog
-          open={uploadOpen}
-          onOpenChange={(open) => {
-            if (!uploading) {
-              setUploadOpen(open);
-              if (!open) { setUploadFile(null); setActiveRequest(null); }
-            }
-          }}
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Upload Requested Document
-              </DialogTitle>
-              <DialogDescription>
-                {activeRequest && (
-                  <>
-                    Your agent has requested: <strong>{activeRequest.document_name}</strong>.
-                    {activeRequest.description && (
-                      <span className="block mt-1 text-sm text-muted-foreground">{activeRequest.description}</span>
-                    )}
-                  </>
-                )}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-2">
-              <div className="space-y-2">
-                <Label htmlFor="msme-file-upload">Select File</Label>
-                <div
-                  className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {uploadFile ? (
-                    <div className="flex items-center justify-center gap-3">
-                      <FileText className="h-8 w-8 text-primary" />
-                      <div className="text-left">
-                        <p className="font-medium text-sm">{uploadFile.name}</p>
-                        <p className="text-xs text-muted-foreground">{formatBytes(uploadFile.size)}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">Click to browse</p>
-                      <p className="text-xs text-muted-foreground mt-1">PDF, JPEG, PNG, WebP, Word · Max 10 MB</p>
-                    </div>
-                  )}
-                </div>
-                <input
-                  ref={fileInputRef}
-                  id="msme-file-upload"
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
-                  className="hidden"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setUploadOpen(false)}
-                disabled={uploading}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleUpload}
-                disabled={!uploadFile || uploading}
-                className="gap-2"
-              >
-                {uploading
-                  ? <><Loader2 className="h-4 w-4 animate-spin" />Uploading…</>
-                  : <><Upload className="h-4 w-4" />Submit Document</>
-                }
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          </div>
+        </div>
       </div>
+
+      {/* ─── Upload Dialog ─────────────────────────────────────────────────── */}
+      <Dialog
+        open={uploadOpen}
+        onOpenChange={(open) => {
+          if (!uploading) {
+            setUploadOpen(open);
+            if (!open) { setUploadFile(null); setActiveRequest(null); }
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5" />
+              Upload Requested Document
+            </DialogTitle>
+            <DialogDescription>
+              {activeRequest && (
+                <>
+                  Your agent has requested: <strong>{activeRequest.document_name}</strong>.
+                  {activeRequest.description && (
+                    <span className="block mt-1 text-sm text-muted-foreground">{activeRequest.description}</span>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="detail-file-upload">Select File</Label>
+              <div
+                className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploadFile ? (
+                  <div className="flex items-center justify-center gap-3">
+                    <FileText className="h-8 w-8 text-primary" />
+                    <div className="text-left">
+                      <p className="font-medium text-sm">{uploadFile.name}</p>
+                      <p className="text-xs text-muted-foreground">{formatBytes(uploadFile.size)}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Click to browse</p>
+                    <p className="text-xs text-muted-foreground mt-1">PDF, JPEG, PNG, WebP, Word · Max 10 MB</p>
+                  </div>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                id="detail-file-upload"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                className="hidden"
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadOpen(false)} disabled={uploading}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpload} disabled={!uploadFile || uploading} className="gap-2">
+              {uploading
+                ? <><Loader2 className="h-4 w-4 animate-spin" />Uploading…</>
+                : <><Upload className="h-4 w-4" />Submit Document</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

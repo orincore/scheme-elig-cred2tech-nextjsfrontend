@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { casesApi } from '@/lib/services/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -30,17 +28,11 @@ import { toast } from 'sonner';
 import {
   ArrowLeft,
   Building2,
-  Calendar,
-  Phone,
-  Mail,
-  MapPin,
   FileText,
   Clock,
   CheckCircle,
   AlertCircle,
   User,
-  Package,
-  ExternalLink,
   Upload,
   Loader2,
   Download,
@@ -48,6 +40,7 @@ import {
   FilePlus,
   Inbox,
   MessageSquare,
+  TrendingUp,
 } from 'lucide-react';
 
 interface CaseDetails {
@@ -73,6 +66,8 @@ interface CaseDetails {
     action: string;
     performedBy: string;
     performedByType?: string;
+    performedByAdminRole?: string | null;
+    performedByAdminCode?: string | null;
     timestamp: string;
     notes?: string;
     oldValue?: any;
@@ -115,28 +110,55 @@ const STATUS_OPTIONS = [
 
 const PRIORITY_OPTIONS = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'];
 
-function statusColor(status: string) {
-  switch (status) {
-    case 'NEW':              return 'bg-blue-100 text-blue-800';
-    case 'ASSIGNED':         return 'bg-purple-100 text-purple-800';
-    case 'IN_PROGRESS':      return 'bg-yellow-100 text-yellow-800';
-    case 'UNDER_REVIEW':     return 'bg-indigo-100 text-indigo-800';
-    case 'DOCUMENTS_PENDING': return 'bg-orange-100 text-orange-800';
-    case 'APPROVED':         return 'bg-green-100 text-green-800';
-    case 'CLOSED':           return 'bg-gray-100 text-gray-600';
-    case 'CANCELLED':        return 'bg-red-100 text-red-800';
-    default:                 return 'bg-gray-100 text-gray-800';
-  }
+const PILL = 'inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full';
+
+const STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  NEW:               { label: 'New',            cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  ASSIGNED:          { label: 'Assigned',       cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+  IN_PROGRESS:       { label: 'In Progress',    cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  UNDER_REVIEW:      { label: 'Under Review',   cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  DOCUMENTS_PENDING: { label: 'Docs Pending',   cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+  APPROVED:          { label: 'Approved',       cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  REJECTED:          { label: 'Rejected',       cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  CLOSED:            { label: 'Closed',         cls: 'bg-muted text-muted-foreground' },
+  CANCELLED:         { label: 'Cancelled',      cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  ESCALATED:         { label: 'Escalated',      cls: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300' },
+};
+const PRIORITY_CFG: Record<string, string> = {
+  URGENT: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  HIGH:   'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  MEDIUM: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  LOW:    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+};
+
+function StatusPill({ status }: { status: string }) {
+  const cfg = STATUS_CFG[status] ?? { label: status?.replace(/_/g, ' ') || '—', cls: 'bg-muted text-muted-foreground' };
+  return <span className={`${PILL} ${cfg.cls}`}>{cfg.label}</span>;
+}
+function PriorityPill({ priority }: { priority: string }) {
+  if (!priority) return null;
+  return <span className={`${PILL} ${PRIORITY_CFG[priority] ?? 'bg-muted text-muted-foreground'}`}>{priority}</span>;
 }
 
-function priorityColor(priority: string) {
-  switch (priority) {
-    case 'URGENT': return 'bg-red-100 text-red-800';
-    case 'HIGH':   return 'bg-orange-100 text-orange-800';
-    case 'MEDIUM': return 'bg-blue-100 text-blue-800';
-    case 'LOW':    return 'bg-gray-100 text-gray-800';
-    default:       return 'bg-gray-100 text-gray-800';
-  }
+function InfoRow({ label, value, mono }: { label: string; value?: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/50 last:border-0">
+      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide min-w-[130px] shrink-0 pt-0.5">{label}</span>
+      <span className={`text-[13px] text-foreground flex-1 ${mono ? 'font-mono' : ''}`}>
+        {value ?? <span className="text-muted-foreground/40">—</span>}
+      </span>
+    </div>
+  );
+}
+
+function SectionHeader({ icon: Icon, title, action }: { icon: any; title: string; action?: React.ReactNode }) {
+  return (
+    <div className="px-5 py-3.5 border-b border-border bg-background flex items-center gap-2">
+      <Icon className="h-4 w-4 text-muted-foreground" />
+      <h3 className="text-[13px] font-bold text-foreground flex-1">{title}</h3>
+      {action}
+    </div>
+  );
 }
 
 function formatAction(action: string) {
@@ -181,6 +203,11 @@ export default function AdminCaseDetailPage() {
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
 
+  // ── Priority dialog ────────────────────────────────────────────────────────
+  const [priorityOpen, setPriorityOpen] = useState(false);
+  const [newPriority, setNewPriority] = useState('');
+  const [updatingPriority, setUpdatingPriority] = useState(false);
+
   // ── Fetch case details ──────────────────────────────────────────────────────
   const fetchCaseDetails = async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -193,6 +220,8 @@ export default function AdminCaseDetailPage() {
           action: h.action,
           performedBy: h.performedBy ?? h.performed_by_name ?? 'System',
           performedByType: h.performedByType ?? h.performed_by_type,
+          performedByAdminRole: h.performedByAdminRole ?? h.performed_by_admin_role ?? null,
+          performedByAdminCode: h.performedByAdminCode ?? h.performed_by_admin_code ?? null,
           timestamp: h.createdAt ?? h.created_at ?? h.timestamp,
           notes: h.notes ?? undefined,
           oldValue: h.oldValue ?? h.old_value,
@@ -318,7 +347,7 @@ export default function AdminCaseDetailPage() {
       return;
     }
     try {
-      await casesApi.updateCaseStatus(caseId, newStatus);
+      await casesApi.updateCaseStatusAdmin(caseId, newStatus);
       toast.success('Status updated successfully');
       setStatusOpen(false);
       await fetchCaseDetails();
@@ -343,436 +372,447 @@ export default function AdminCaseDetailPage() {
     }
   };
 
-  // ── Loading state ───────────────────────────────────────────────────────────
+  const handleUpdatePriority = async () => {
+    if (!newPriority) { toast.error('Please select a priority'); return; }
+    setUpdatingPriority(true);
+    try {
+      await casesApi.updateCasePriority(caseId, newPriority);
+      toast.success(`Priority set to ${newPriority}`);
+      setPriorityOpen(false);
+      await fetchCaseDetails();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update priority');
+    } finally {
+      setUpdatingPriority(false);
+    }
+  };
+
+  // ── Loading ──────────────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-64 bg-slate-800" />
-        <Skeleton className="h-32 w-full bg-slate-800" />
-        <Skeleton className="h-32 w-full bg-slate-800" />
-        <Skeleton className="h-32 w-full bg-slate-800" />
+        <div className="border-b-2 border-border pb-6 space-y-3">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-8 w-56" />
+          <Skeleton className="h-4 w-80" />
+        </div>
+        <div className="grid lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-4">
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-48 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+          <Skeleton className="h-80 w-full" />
+        </div>
       </div>
     );
   }
 
-  // ── Error state ─────────────────────────────────────────────────────────────
+  // ── Error ─────────────────────────────────────────────────────────────────────
   if (error || !caseDetails) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.back()}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
+      <div className="space-y-4">
+        <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" />Back to Cases
+        </button>
+        <div className="bg-card border border-border rounded-none flex flex-col items-center justify-center py-20">
+          <AlertCircle className="h-10 w-10 text-destructive mb-3" />
+          <p className="text-sm font-semibold text-foreground mb-1">Failed to load case</p>
+          <p className="text-xs text-muted-foreground">{error || 'Case not found'}</p>
         </div>
-        <Card className="bg-white dark:bg-slate-800">
-          <CardContent className="p-12 text-center">
-            <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
-            <p className="text-slate-500 dark:text-slate-400">{error || 'Case not found'}</p>
-          </CardContent>
-        </Card>
       </div>
     );
   }
+
+  const actionBtn = 'inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors';
+  const isAdminRole = admin?.role === 'ADMIN' || admin?.role === 'SUPER_ADMIN';
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.back()}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {caseDetails.caseNumber}
-          </h2>
+      {/* ── Page header ─────────────────────────────────────────────────────── */}
+      <div className="border-b-2 border-border pb-6">
+        <button
+          onClick={() => router.back()}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+        >
+          <ArrowLeft className="h-4 w-4" />Back to Cases
+        </button>
+
+        <p className="text-[11px] font-bold text-primary uppercase tracking-[0.1em] mb-1.5">Case Detail</p>
+
+        <div className="flex items-start justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-foreground font-mono">
+              {caseDetails.caseNumber}
+            </h1>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <StatusPill status={caseDetails.status} />
+              <PriorityPill priority={caseDetails.priority} />
+              <span className="text-muted-foreground/40 text-xs">·</span>
+              <span className="text-xs text-muted-foreground">
+                {caseDetails.schemeName || caseDetails.schemeId}
+              </span>
+            </div>
+          </div>
+
+          {/* Action toolbar */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button className={actionBtn} onClick={() => setUploadOpen(true)}>
+              <Upload className="h-3.5 w-3.5" />Upload Doc
+            </button>
+            <button className={actionBtn} onClick={() => setReqDocOpen(true)}>
+              <FilePlus className="h-3.5 w-3.5" />Request Doc
+            </button>
+            <button className={actionBtn} onClick={() => { setNewStatus(caseDetails.status); setStatusOpen(true); }}>
+              <CheckCircle className="h-3.5 w-3.5" />Update Status
+            </button>
+            {isAdminRole && (
+              <button className={actionBtn} onClick={() => { setNewPriority(caseDetails.priority); setPriorityOpen(true); }}>
+                <TrendingUp className="h-3.5 w-3.5" />Change Priority
+              </button>
+            )}
+            <button className={actionBtn} onClick={() => setNotesOpen(true)}>
+              <MessageSquare className="h-3.5 w-3.5" />Add Note
+            </button>
+            <button
+              className={actionBtn}
+              onClick={() => { fetchCaseDetails(); fetchDocuments(); }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />Refresh
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge className={statusColor(caseDetails.status)}>
-            {caseDetails.status.replace(/_/g, ' ')}
-          </Badge>
-          <Badge variant="outline" className={priorityColor(caseDetails.priority)}>
-            {caseDetails.priority} Priority
-          </Badge>
+
+        {/* Quick-stats strip */}
+        <div className="flex items-center gap-5 mt-5 flex-wrap">
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">Created</p>
+            <p className="text-sm font-semibold text-foreground">
+              {new Date(caseDetails.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </p>
+          </div>
+          <div className="w-px h-8 bg-border" />
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">Last Updated</p>
+            <p className="text-sm font-semibold text-foreground">
+              {new Date(caseDetails.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </p>
+          </div>
+          <div className="w-px h-8 bg-border" />
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">Documents</p>
+            <p className="text-sm font-semibold text-foreground">{documents.length}</p>
+          </div>
+          <div className="w-px h-8 bg-border" />
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">Timeline Events</p>
+            <p className="text-sm font-semibold text-foreground">{caseDetails.timeline?.length ?? 0}</p>
+          </div>
         </div>
       </div>
 
-      {/* Case Overview */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">Case Overview</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label className="text-slate-500">Scheme</Label>
-              <p className="font-medium text-slate-900 dark:text-white">{caseDetails.schemeName}</p>
-            </div>
-            <div>
-              <Label className="text-slate-500">Status</Label>
-              <Badge className={statusColor(caseDetails.status)}>
-                {caseDetails.status.replace(/_/g, ' ')}
-              </Badge>
-            </div>
-            <div>
-              <Label className="text-slate-500">Created</Label>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {new Date(caseDetails.createdAt).toLocaleString()}
-              </p>
-            </div>
-            <div>
-              <Label className="text-slate-500">Updated</Label>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {new Date(caseDetails.updatedAt).toLocaleString()}
-              </p>
+      {/* ── Two-column layout ────────────────────────────────────────────────── */}
+      <div className="grid lg:grid-cols-3 gap-4 items-start">
+        {/* Left — main info */}
+        <div className="lg:col-span-2 space-y-4">
+
+          {/* MSME Information */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader icon={Building2} title="MSME Information" />
+            <div className="px-5 py-4">
+              <InfoRow label="Name"          value={caseDetails.msmeName} />
+              <InfoRow label="Business Name" value={caseDetails.msmeBusinessName} />
+              <InfoRow label="Phone"         value={<span className="font-mono">{caseDetails.msmePhone}</span>} />
+              <InfoRow label="Email"         value={<span className="font-mono">{caseDetails.msmeEmail}</span>} />
+              <InfoRow label="Address"       value={caseDetails.msmeAddress} />
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* MSME Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            MSME Information
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label className="text-slate-500">Name</Label>
-              <p className="font-medium text-slate-900 dark:text-white">{caseDetails.msmeName}</p>
-            </div>
-            <div>
-              <Label className="text-slate-500">Business Name</Label>
-              <p className="font-medium text-slate-900 dark:text-white">{caseDetails.msmeBusinessName}</p>
-            </div>
-            <div>
-              <Label className="text-slate-500 flex items-center gap-2">
-                <Phone className="h-4 w-4" />
-                Phone
-              </Label>
-              <p className="font-medium text-slate-900 dark:text-white">{caseDetails.msmePhone}</p>
-            </div>
-            <div>
-              <Label className="text-slate-500 flex items-center gap-2">
-                <Mail className="h-4 w-4" />
-                Email
-              </Label>
-              <p className="font-medium text-slate-900 dark:text-white">{caseDetails.msmeEmail}</p>
-            </div>
-            <div className="md:col-span-2">
-              <Label className="text-slate-500 flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                Address
-              </Label>
-              <p className="font-medium text-slate-900 dark:text-white">{caseDetails.msmeAddress}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Assigned Agent */}
-      {caseDetails.assignedAgentName && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <User className="h-5 w-5" />
-              Assigned Agent
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label className="text-slate-500">Name</Label>
-                <p className="font-medium text-slate-900 dark:text-white">{caseDetails.assignedAgentName}</p>
-              </div>
-              <div>
-                <Label className="text-slate-500 flex items-center gap-2">
-                  <Phone className="h-4 w-4" />
-                  Phone
-                </Label>
-                <p className="font-medium text-slate-900 dark:text-white">{caseDetails.assignedAgentPhone}</p>
-              </div>
-              <div>
-                <Label className="text-slate-500 flex items-center gap-2">
-                  <Mail className="h-4 w-4" />
-                  Email
-                </Label>
-                <p className="font-medium text-slate-900 dark:text-white">{caseDetails.assignedAgentEmail}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Timeline */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5" />
-            Case Timeline
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {caseDetails.timeline && caseDetails.timeline.length > 0 ? (
-            <div className="space-y-4">
-              {caseDetails.timeline.map((item, index) => (
-                <div key={item.id} className="flex gap-4">
-                  <div className="flex flex-col items-center">
-                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${index === 0 ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
-                    {index < caseDetails.timeline!.length - 1 && (
-                      <div className="w-0.5 flex-1 bg-border mt-1" />
-                    )}
-                  </div>
-                  <div className="flex-1 pb-4">
-                    <div className="flex justify-between items-start mb-0.5">
-                      <p className="font-medium text-sm">{formatAction(item.action)}</p>
-                      <span className="text-xs text-muted-foreground ml-3 flex-shrink-0">
-                        {new Date(item.timestamp).toLocaleString()}
-                      </span>
+          {/* Assigned Agent */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader icon={User} title="Assigned Agent" />
+            <div className="px-5 py-4">
+              {caseDetails.assignedAgentName ? (
+                <>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold shrink-0">
+                      {caseDetails.assignedAgentName[0]?.toUpperCase()}
                     </div>
-                    <p className="text-xs text-muted-foreground">by {item.performedBy || 'System'}</p>
-                    {item.action === 'STATUS_CHANGED' && item.newValue && (
-                      <div className="mt-1">
-                        <span className="text-xs font-medium text-foreground">Status: </span>
-                        <span className="text-xs text-primary font-medium">
-                          {typeof item.newValue === 'object' 
-                            ? (item.newValue.status || item.newValue.newStatus || JSON.stringify(item.newValue))
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{caseDetails.assignedAgentName}</p>
+                      <p className="text-xs text-muted-foreground">Assigned Agent</p>
+                    </div>
+                  </div>
+                  <InfoRow label="Phone" value={<span className="font-mono">{caseDetails.assignedAgentPhone || '—'}</span>} />
+                  <InfoRow label="Email" value={<span className="font-mono">{caseDetails.assignedAgentEmail || '—'}</span>} />
+                </>
+              ) : (
+                <div className="flex items-center justify-center py-8">
+                  <p className="text-sm text-muted-foreground/60 italic">No agent assigned yet</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Documents */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader
+              icon={FileText}
+              title={`Documents (${documents.length})`}
+              action={
+                <button className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors`} onClick={() => setUploadOpen(true)}>
+                  <Upload className="h-3 w-3" />Upload
+                </button>
+              }
+            />
+            <div className="px-5 py-3">
+              {docsLoading ? (
+                <div className="space-y-2 py-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : documents.length > 0 ? (
+                <div className="divide-y divide-border/50">
+                  {documents.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between py-3 gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{doc.file_name}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {doc.document_tag || 'Document'} · {(doc.file_size / 1024).toFixed(1)} KB · {new Date(doc.uploaded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => window.open(`http://localhost:3001${doc.file_url}`, '_blank')}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
+                      >
+                        <Download className="h-3 w-3" />Open
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/50">
+                  <Inbox className="h-8 w-8 mb-2" />
+                  <p className="text-sm">No documents uploaded yet</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right — timeline */}
+        <div className="bg-card border border-border rounded-none overflow-hidden">
+          <SectionHeader icon={Clock} title="Timeline" />
+          <div className="px-5 py-4">
+            {caseDetails.timeline && caseDetails.timeline.length > 0 ? (
+              <div className="space-y-0">
+                {caseDetails.timeline.map((item, index) => (
+                  <div key={item.id} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${index === 0 ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
+                      {index < caseDetails.timeline!.length - 1 && (
+                        <div className="w-px flex-1 bg-border/60 mt-1 mb-1" />
+                      )}
+                    </div>
+                    <div className="flex-1 pb-4 min-w-0">
+                      <p className="text-[12px] font-semibold text-foreground leading-tight">{formatAction(item.action)}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {item.performedByType === 'ADMIN' && item.performedByAdminRole === 'ADMIN' && item.performedByAdminCode
+                            ? item.performedByAdminCode
+                            : item.performedBy || 'System'}
+                        </span>
+                        {item.performedByType && (
+                          <span className={`${PILL} text-[9px] py-0 ${
+                            item.performedByType === 'ADMIN' && item.performedByAdminRole === 'SUPER_ADMIN'
+                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' :
+                            item.performedByType === 'ADMIN'
+                              ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' :
+                            item.performedByType === 'AGENT'
+                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
+                            'bg-muted text-muted-foreground'
+                          }`}>
+                            {item.performedByType === 'ADMIN' && item.performedByAdminRole === 'SUPER_ADMIN'
+                              ? 'Super Admin'
+                              : item.performedByType === 'SYSTEM'
+                                ? 'System'
+                                : item.performedByType.charAt(0) + item.performedByType.slice(1).toLowerCase()}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground/50">·</span>
+                        <span className="text-[10px] text-muted-foreground">{new Date(item.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}, {new Date(item.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                      </div>
+                      {item.action === 'STATUS_CHANGED' && item.newValue && (
+                        <span className={`${PILL} mt-1 bg-primary/10 text-primary`}>
+                          {typeof item.newValue === 'object'
+                            ? (item.newValue.status || item.newValue.newStatus || '')
                             : String(item.newValue)}
                         </span>
-                      </div>
-                    )}
-                    {item.notes && (
-                      <p className="text-xs text-foreground/70 mt-1 bg-muted/40 rounded px-2 py-1">{item.notes}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-10 text-muted-foreground">
-              <Clock className="h-12 w-12 mx-auto mb-3 opacity-40" />
-              <p className="text-sm">No timeline events yet.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Documents */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Documents
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {docsLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-10 w-full bg-slate-800" />
-              <Skeleton className="h-10 w-full bg-slate-800" />
-            </div>
-          ) : documents.length > 0 ? (
-            <div className="space-y-2">
-              {documents.map((doc) => (
-                <div key={doc.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-4 w-4 text-slate-500" />
-                    <div>
-                      <p className="font-medium text-sm text-slate-900 dark:text-white">{doc.file_name}</p>
-                      <p className="text-xs text-slate-500">
-                        {doc.document_tag} • {(doc.file_size / 1024).toFixed(1)} KB
-                      </p>
+                      )}
+                      {item.notes && (() => {
+                        let display = item.notes;
+                        try {
+                          const parsed = JSON.parse(item.notes);
+                          display = parsed.adminNotes || parsed.agentNotes || parsed.msmeNotes || item.notes;
+                        } catch {}
+                        return (
+                          <p className="text-[11px] text-foreground/70 mt-1.5 bg-muted/40 rounded px-2 py-1 leading-snug">{display}</p>
+                        );
+                      })()}
                     </div>
                   </div>
-                  <div className="ml-4">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => window.open(`http://localhost:3001${doc.file_url}`, '_blank')}
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-10 text-muted-foreground">
-              <Inbox className="h-12 w-12 mx-auto mb-3 opacity-40" />
-              <p className="text-sm">No documents uploaded yet.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Action Buttons */}
-      <div className="flex flex-wrap gap-3 pt-2">
-        <Button onClick={() => setUploadOpen(true)} className="gap-2">
-          <Upload className="h-4 w-4" />
-          Upload Documents
-        </Button>
-        <Button variant="outline" onClick={() => setReqDocOpen(true)} className="gap-2">
-          <FilePlus className="h-4 w-4" />
-          Request Document
-        </Button>
-        <Button variant="outline" onClick={() => { setNewStatus(caseDetails.status); setStatusOpen(true); }} className="gap-2">
-          <CheckCircle className="h-4 w-4" />
-          Update Status
-        </Button>
-        <Button variant="outline" onClick={() => setNotesOpen(true)} className="gap-2">
-          <MessageSquare className="h-4 w-4" />
-          Add Notes
-        </Button>
-        <Button variant="outline" onClick={() => { fetchCaseDetails(); fetchDocuments(); }} className="gap-2">
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/50">
+                <Clock className="h-8 w-8 mb-2" />
+                <p className="text-sm">No events yet</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Upload Document Dialog */}
+      {/* ── Dialogs (logic unchanged) ────────────────────────────────────────── */}
+
+      {/* Upload Document */}
       <Dialog open={uploadOpen} onOpenChange={(open) => { if (!uploading) setUploadOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Upload Document
+              <Upload className="h-5 w-5" />Upload Document
             </DialogTitle>
+            <DialogDescription>Attach a file to this case.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="file">Select File</Label>
-              <Input
-                id="file"
-                type="file"
-                ref={fileInputRef}
-                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
-              />
-            </div>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="file">Select File</Label>
+            <Input
+              id="file"
+              type="file"
+              ref={fileInputRef}
+              onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+            />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadOpen(false)} disabled={uploading}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpload} disabled={!uploadFile || uploading}>
-              {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Upload
+            <Button variant="outline" size="sm" onClick={() => setUploadOpen(false)} disabled={uploading}>Cancel</Button>
+            <Button size="sm" onClick={handleUpload} disabled={!uploadFile || uploading}>
+              {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Upload
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Request Document Dialog */}
+      {/* Request Document */}
       <Dialog open={reqDocOpen} onOpenChange={(open) => { if (!requesting) setReqDocOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <FilePlus className="h-5 w-5" />
-              Request Document
+              <FilePlus className="h-5 w-5" />Request Document
             </DialogTitle>
+            <DialogDescription>Ask the MSME user to upload a specific document.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
               <Label htmlFor="docName">Document Name</Label>
-              <Input
-                id="docName"
-                value={reqDocName}
-                onChange={(e) => setReqDocName(e.target.value)}
-                placeholder="e.g., PAN Card, GST Certificate"
-              />
+              <Input id="docName" value={reqDocName} onChange={(e) => setReqDocName(e.target.value)} placeholder="e.g. PAN Card, GST Certificate" />
             </div>
-            <div>
-              <Label htmlFor="docDesc">Description (Optional)</Label>
-              <Textarea
-                id="docDesc"
-                value={reqDocDesc}
-                onChange={(e) => setReqDocDesc(e.target.value)}
-                placeholder="Additional details about the document"
-                rows={3}
-              />
+            <div className="space-y-1.5">
+              <Label htmlFor="docDesc">Description (optional)</Label>
+              <Textarea id="docDesc" value={reqDocDesc} onChange={(e) => setReqDocDesc(e.target.value)} placeholder="Additional details" rows={3} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReqDocOpen(false)} disabled={requesting}>
-              Cancel
-            </Button>
-            <Button onClick={handleRequestDocument} disabled={!reqDocName || requesting}>
-              {requesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Request
+            <Button variant="outline" size="sm" onClick={() => setReqDocOpen(false)} disabled={requesting}>Cancel</Button>
+            <Button size="sm" onClick={handleRequestDocument} disabled={!reqDocName || requesting}>
+              {requesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Request
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Update Status Dialog */}
+      {/* Update Status */}
       <Dialog open={statusOpen} onOpenChange={setStatusOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5" />
-              Update Status
+              <CheckCircle className="h-5 w-5" />Update Status
             </DialogTitle>
+            <DialogDescription>Change the current status of this case.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="status">New Status</Label>
-              <Select value={newStatus} onValueChange={setNewStatus}>
-                <SelectTrigger id="status">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status.replace(/_/g, ' ')}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="status">New Status</Label>
+            <Select value={newStatus} onValueChange={setNewStatus}>
+              <SelectTrigger id="status">
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStatusOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpdateStatus} disabled={!newStatus}>
-              Update
+            <Button variant="outline" size="sm" onClick={() => setStatusOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleUpdateStatus} disabled={!newStatus}>Update</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Notes */}
+      <Dialog open={notesOpen} onOpenChange={(open) => { if (!savingNotes) setNotesOpen(open); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />Add Note
+            </DialogTitle>
+            <DialogDescription>Internal admin note for this case.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="notes">Note</Label>
+            <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Enter your notes about this case" rows={5} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setNotesOpen(false)} disabled={savingNotes}>Cancel</Button>
+            <Button size="sm" onClick={handleSaveNotes} disabled={!notes || savingNotes}>
+              {savingNotes && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Notes Dialog */}
-      <Dialog open={notesOpen} onOpenChange={(open) => { if (!savingNotes) setNotesOpen(open); }}>
+      {/* Change Priority */}
+      <Dialog open={priorityOpen} onOpenChange={(open) => { if (!updatingPriority) setPriorityOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
-              Add Notes
+              <TrendingUp className="h-5 w-5" />Change Priority
             </DialogTitle>
+            <DialogDescription>Update the priority level for this case.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Enter your notes about this case"
-                rows={5}
-              />
-            </div>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="priority">Priority</Label>
+            <Select value={newPriority} onValueChange={setNewPriority}>
+              <SelectTrigger id="priority">
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                {PRIORITY_OPTIONS.map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNotesOpen(false)} disabled={savingNotes}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveNotes} disabled={!notes || savingNotes}>
-              {savingNotes && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save
+            <Button variant="outline" size="sm" onClick={() => setPriorityOpen(false)} disabled={updatingPriority}>Cancel</Button>
+            <Button size="sm" onClick={handleUpdatePriority} disabled={!newPriority || updatingPriority}>
+              {updatingPriority && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update
             </Button>
           </DialogFooter>
         </DialogContent>

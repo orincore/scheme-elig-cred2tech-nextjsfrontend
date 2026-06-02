@@ -3,80 +3,111 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Hikasami (the Cred2Tech brand font) is loaded via next/font/local in
+   app/layout.tsx, which exposes it as the --font-hikasami CSS variable on
+   <html>. It is wired into Tailwind's font-sans below. */
+
+/* ============================================================================
+   Cred2Tech design tokens — "Light Blue / Dark Blue" palette (theme.ts)
+   Mapped onto shadcn/ui semantic tokens so every page recolors automatically.
+   ============================================================================ */
 :root {
-  --background: oklch(0.99 0.001 0);
-  --foreground: oklch(0.25 0.02 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.25 0.02 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.02 260);
-  --primary: oklch(0.52 0.174 254);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.75 0.062 254);
-  --secondary-foreground: oklch(0.25 0.02 260);
-  --muted: oklch(0.9 0.01 260);
-  --muted-foreground: oklch(0.55 0.03 260);
-  --accent: oklch(0.62 0.185 39);
-  --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.93 0.01 260);
-  --input: oklch(0.98 0.005 260);
-  --ring: oklch(0.52 0.174 254);
-  --chart-1: oklch(0.52 0.174 254);
-  --chart-2: oklch(0.62 0.185 39);
-  --chart-3: oklch(0.75 0.062 254);
-  --chart-4: oklch(0.45 0.15 180);
-  --chart-5: oklch(0.68 0.14 40);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.99 0.001 0);
-  --sidebar-foreground: oklch(0.25 0.02 260);
-  --sidebar-primary: oklch(0.52 0.174 254);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.75 0.062 254);
-  --sidebar-accent-foreground: oklch(0.25 0.02 260);
-  --sidebar-border: oklch(0.93 0.01 260);
-  --sidebar-ring: oklch(0.52 0.174 254);
+  /* surfaces */
+  --background: #eef4ff;        /* colors.bg          */
+  --foreground: #0a1628;        /* colors.onSurface   */
+  --card: #ffffff;              /* colors.surface     */
+  --card-foreground: #0a1628;
+  --popover: #ffffff;
+  --popover-foreground: #0a1628;
+
+  /* brand */
+  --primary: #4f46e5;           /* indigo primary     */
+  --primary-foreground: #ffffff;
+  --secondary: #e0eaff;         /* colors.surfaceLow  */
+  --secondary-foreground: #0a1628;
+  --muted: #e0eaff;
+  --muted-foreground: #4a5d73;  /* colors.onMuted     */
+  --accent: #e0eaff;
+  --accent-foreground: #1e1b4b;
+
+  /* status */
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  /* lines & focus */
+  --border: #c7d2fe;            /* colors.outline     */
+  --input: #c7d2fe;
+  --ring: #4f46e5;
+
+  /* charts */
+  --chart-1: #4f46e5;
+  --chart-2: #6366f1;
+  --chart-3: #818cf8;
+  --chart-4: #10b981;
+  --chart-5: #f59e0b;
+
+  --radius: 0.75rem;
+
+  /* sidebar */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a1628;
+  --sidebar-primary: #4f46e5;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e0eaff;
+  --sidebar-accent-foreground: #1e1b4b;
+  --sidebar-border: #c7d2fe;
+  --sidebar-ring: #4f46e5;
 }
 
 .dark {
-  --background: oklch(0.15 0.01 260);
-  --foreground: oklch(0.95 0.01 260);
-  --card: oklch(0.22 0.01 260);
-  --card-foreground: oklch(0.95 0.01 260);
-  --popover: oklch(0.22 0.01 260);
-  --popover-foreground: oklch(0.95 0.01 260);
-  --primary: oklch(0.65 0.19 254);
-  --primary-foreground: oklch(0.15 0.01 260);
-  --secondary: oklch(0.35 0.05 254);
-  --secondary-foreground: oklch(0.95 0.01 260);
-  --muted: oklch(0.3 0.02 260);
-  --muted-foreground: oklch(0.7 0.03 260);
-  --accent: oklch(0.7 0.19 39);
-  --accent-foreground: oklch(0.15 0.01 260);
-  --destructive: oklch(0.65 0.24 27.325);
-  --destructive-foreground: oklch(0.95 0.01 260);
-  --border: oklch(0.3 0.02 260);
-  --input: oklch(0.25 0.02 260);
-  --ring: oklch(0.65 0.19 254);
-  --chart-1: oklch(0.65 0.19 254);
-  --chart-2: oklch(0.7 0.19 39);
-  --chart-3: oklch(0.55 0.08 254);
-  --chart-4: oklch(0.65 0.16 180);
-  --chart-5: oklch(0.75 0.16 40);
-  --sidebar: oklch(0.18 0.01 260);
-  --sidebar-foreground: oklch(0.95 0.01 260);
-  --sidebar-primary: oklch(0.65 0.19 254);
-  --sidebar-primary-foreground: oklch(0.15 0.01 260);
-  --sidebar-accent: oklch(0.35 0.05 254);
-  --sidebar-accent-foreground: oklch(0.95 0.01 260);
-  --sidebar-border: oklch(0.3 0.02 260);
-  --sidebar-ring: oklch(0.65 0.19 254);
+  /* surfaces */
+  --background: #0a1628;        /* colors.dark.bg         */
+  --foreground: #e6edf7;        /* colors.dark.onSurface  */
+  --card: #162048;             /* colors.dark.surface    */
+  --card-foreground: #e6edf7;
+  --popover: #162048;
+  --popover-foreground: #e6edf7;
+
+  /* brand */
+  --primary: #6366f1;          /* primary-light for contrast on dark */
+  --primary-foreground: #ffffff;
+  --secondary: #1e2a5c;        /* colors.dark.surfaceLow */
+  --secondary-foreground: #e6edf7;
+  --muted: #1e2a5c;
+  --muted-foreground: #94a3b8; /* colors.dark.onMuted    */
+  --accent: #1e2a5c;
+  --accent-foreground: #e6edf7;
+
+  /* status */
+  --destructive: #f87171;
+  --destructive-foreground: #0a1628;
+
+  /* lines & focus */
+  --border: #2d3a6c;           /* colors.dark.outline    */
+  --input: #2d3a6c;
+  --ring: #6366f1;
+
+  /* charts */
+  --chart-1: #6366f1;
+  --chart-2: #818cf8;
+  --chart-3: #a5b4fc;
+  --chart-4: #34d399;
+  --chart-5: #fbbf24;
+
+  /* sidebar */
+  --sidebar: #162048;
+  --sidebar-foreground: #e6edf7;
+  --sidebar-primary: #6366f1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1e2a5c;
+  --sidebar-accent-foreground: #e6edf7;
+  --sidebar-border: #2d3a6c;
+  --sidebar-ring: #6366f1;
 }
 
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback';
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: var(--font-hikasami), system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -120,6 +151,214 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
+}
+
+/* ── Theme wipe (view transitions for light/dark toggle) ───────────────────── */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 999; }
+
+.wipe-to-dark::view-transition-new(root) {
+  animation: reveal-top-left 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.wipe-to-light::view-transition-new(root) {
+  animation: reveal-top-right 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes reveal-top-left {
+  from { clip-path: polygon(0 0, 0 0, 0 0); }
+  to { clip-path: polygon(0 0, 200% 0, 0 200%); }
+}
+@keyframes reveal-top-right {
+  from { clip-path: polygon(100% 0, 100% 0, 100% 0); }
+  to { clip-path: polygon(100% 0, 100% 200%, -100% 0); }
+}
+
+/* ── Custom scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+html { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+/* ── Bookmark save animation ──────────────────────────────────────────────── */
+@keyframes bookmark-pop {
+  0%   { transform: scale(1) rotate(0deg); }
+  20%  { transform: scale(0.7) rotate(-12deg); }
+  55%  { transform: scale(1.45) rotate(6deg); }
+  75%  { transform: scale(0.88) rotate(-3deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.animate-bookmark-pop {
+  animation: bookmark-pop 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Sonner toast — complete theme override ───────────────────────────────── */
+/*
+ * Sonner uses :where() (specificity 0) for most rules, so regular selectors win.
+ * Theme colors live in CSS variables on [data-sonner-toaster][data-theme="*"].
+ * We override them with an html-prefixed selector (specificity 0,2,1) to beat
+ * Sonner's own 0,2,0 declarations, without needing !important anywhere.
+ */
+
+/* ── 1. Width & font ──────────────────────────────────────────────────────── */
+[data-sonner-toaster] {
+  --width: 372px;
+  --border-radius: 10px;
+  font-family: var(--font-sans);
+}
+
+/* ── 2. Theme color variables (beats Sonner's 0,2,0 with html prefix = 0,2,1) */
+html [data-sonner-toaster][data-theme='light'] {
+  --normal-bg:      #ffffff;
+  --normal-border:  #c7d2fe;
+  --normal-text:    #0a1628;
+  --success-bg:     #ffffff;
+  --success-border: #c7d2fe;
+  --success-text:   #0a1628;
+  --error-bg:       #ffffff;
+  --error-border:   #c7d2fe;
+  --error-text:     #0a1628;
+  --warning-bg:     #ffffff;
+  --warning-border: #c7d2fe;
+  --warning-text:   #0a1628;
+  --info-bg:        #ffffff;
+  --info-border:    #c7d2fe;
+  --info-text:      #0a1628;
+}
+
+html [data-sonner-toaster][data-theme='dark'] {
+  --normal-bg:      #162048;
+  --normal-border:  #2d3a6c;
+  --normal-text:    #e6edf7;
+  --success-bg:     #162048;
+  --success-border: #2d3a6c;
+  --success-text:   #e6edf7;
+  --error-bg:       #162048;
+  --error-border:   #2d3a6c;
+  --error-text:     #e6edf7;
+  --warning-bg:     #162048;
+  --warning-border: #2d3a6c;
+  --warning-text:   #e6edf7;
+  --info-bg:        #162048;
+  --info-border:    #2d3a6c;
+  --info-text:      #e6edf7;
+}
+
+/* ── 3. Styled toast card — overrides Sonner's :where() with real selector ── */
+[data-sonner-toast][data-styled='true'] {
+  padding: 14px 16px 14px 19px;
+  gap: 11px;
+  align-items: flex-start;
+  font-family: var(--font-sans);
+  box-shadow:
+    0 0 0 0.5px rgba(79, 70, 229, 0.06),
+    0 2px 4px rgba(0, 0, 0, 0.04),
+    0 6px 20px rgba(0, 0, 0, 0.09);
+}
+
+/* ── 4. Left accent bar — colored 3 px border per type ───────────────────── */
+[data-sonner-toast][data-styled='true'][data-type='success'] { border-left: 3px solid #22c55e; }
+[data-sonner-toast][data-styled='true'][data-type='error']   { border-left: 3px solid #ef4444; }
+[data-sonner-toast][data-styled='true'][data-type='warning'] { border-left: 3px solid #f59e0b; }
+[data-sonner-toast][data-styled='true'][data-type='info'],
+[data-sonner-toast][data-styled='true'][data-type='default'] { border-left: 3px solid #4f46e5; }
+
+/* ── 5. Icon — bump size, vertically nudge to align with title ───────────── */
+[data-sonner-toast] [data-icon] {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+[data-sonner-toast] [data-icon] svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── 6. Title ────────────────────────────────────────────────────────────── */
+[data-sonner-toast] [data-title] {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: inherit;
+}
+
+/* ── 7. Description ─────────────────────────────────────────────────────── */
+[data-sonner-toast] [data-description] {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin-top: 3px;
+  opacity: 0.72;
+  color: inherit;
+}
+
+/* ── 8. Close button — move to top-right inside the card ─────────────────── */
+[data-sonner-toast] [data-close-button] {
+  left: unset;
+  right: 10px;
+  top: 10px;
+  transform: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--normal-border);
+  background: transparent;
+  color: var(--normal-text);
+  opacity: 0.45;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+[data-sonner-toast]:hover [data-close-button],
+[data-sonner-toast] [data-close-button]:hover {
+  opacity: 1;
+  background: color-mix(in oklch, var(--normal-text) 8%, transparent);
+}
+
+/* ── 9. Action / cancel buttons ──────────────────────────────────────────── */
+[data-sonner-toast][data-styled='true'] [data-button] {
+  border-radius: 6px;
+  padding: 4px 10px;
+  height: auto;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+}
+
+/* ── Eligibility dashboard animations ─────────────────────────────────────── */
+@keyframes elig-shimmer {
+  0% { background-position: -468px 0; }
+  100% { background-position: 468px 0; }
+}
+@keyframes elig-scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes elig-pop {
+  0% { opacity: 0; transform: translateY(8px) scale(0.985); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.elig-card-in {
+  animation: elig-pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.elig-scanline {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.elig-scanline::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--primary) 22%, transparent), transparent);
+  animation: elig-scan 1.6s ease-in-out infinite;
 }

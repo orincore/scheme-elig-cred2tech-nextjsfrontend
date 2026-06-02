@@ -7,10 +7,59 @@ import AgentSchemeDetails from '@/components/scheme/AgentSchemeDetails';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+const ELIGIBILITY_URL = process.env.NEXT_PUBLIC_ELIGIBILITY_URL || 'http://localhost:4000';
 
 // ─── In-memory cache (survives same session, cleared on hard refresh) ─────────
 const schemeCache = new Map<string, any>();
+
+// Adapt an AI engine scheme doc into the combined shape AgentSchemeDetails expects.
+function buildFullScheme(s: any) {
+  const applicationProcess_md = (() => {
+    if (Array.isArray(s.applicationProcess) && s.applicationProcess.length > 0) {
+      const text = s.applicationProcess
+        .map((p: any) => p.processText || (p.url ? `Apply online: ${p.url}` : ''))
+        .filter(Boolean)
+        .join('\n\n');
+      if (text) return text;
+    }
+    if (Array.isArray(s.applicationMode) && s.applicationMode.length > 0) {
+      return `Application mode: ${s.applicationMode.join(', ')}`;
+    }
+    return '';
+  })();
+
+  return {
+    success: true,
+    schemeDetail: {
+      en: {
+        basicDetails: {
+          schemeName: s.schemeName,
+          schemeShortTitle: s.schemeShortTitle,
+          nodalMinistryName: { label: s.nodalMinistryName || '' },
+          level: { label: s.level || '' },
+          schemeCategory: (s.schemeCategory || []).map((c: string) => ({ label: c })),
+          schemeSubCategory: (s.schemeSubCategory || []).map((c: string) => ({ label: c })),
+          schemeFor: s.schemeFor || '',
+          schemeType: { label: s.schemeType || '' },
+          implementingAgency: s.implementingAgency || '',
+          tags: s.tags || [],
+          schemeUrl: s.schemeUrl || s.references?.[0]?.url || '',
+          eligibility: s.eligibilityText ? [s.eligibilityText] : [],
+        },
+        schemeContent: {
+          briefDescription: s.briefDescription || '',
+          detailedDescription_md: s.detailedDescription || '',
+          benefits_md: s.benefits || '',
+          exclusions_md: s.exclusions || '',
+          references: s.references || [],
+        },
+      },
+    },
+    documents: { en: { documentsRequired_md: s.documentsRequired || '' } },
+    faqs: { en: { faqs: [] } },
+    applicationChannel: { en: { applicationProcess_md } },
+  };
+}
 
 export default function AgentSchemePage() {
   const { isAuthenticated } = useAgentAuth();
@@ -47,18 +96,20 @@ export default function AgentSchemePage() {
       setError(null);
 
       try {
-        // Public combined endpoint — no auth header needed, cached server-side in Redis
+        // Scheme detail is served by the AI engine's MongoDB catalogue.
         const response = await fetch(
-          `${API_BASE_URL}/api/v1/schemes/${schemeSlug}/full`,
+          `${ELIGIBILITY_URL}/api/schemes/${encodeURIComponent(schemeSlug)}`,
         );
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
 
-        const data = await response.json();
+        const json = await response.json();
+        const scheme = json?.scheme || json?.data || null;
 
-        if (data.success) {
+        if (scheme) {
+          const data = buildFullScheme(scheme);
           schemeCache.set(schemeSlug, data); // persist in memory for this session
           setSchemeData(data);
         } else {

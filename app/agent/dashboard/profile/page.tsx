@@ -2,296 +2,289 @@
 
 import { useEffect, useState } from 'react';
 import { useAgentAuth } from '@/contexts/AgentAuthContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { agentAuthApi } from '@/lib/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  User, 
-  Mail, 
-  Phone, 
-  MapPin, 
-  Briefcase,
-  Award,
-  Calendar,
-  Save,
-  Edit
-} from 'lucide-react';
+import { User, Mail, Phone, MapPin, Star, ShieldCheck, Pencil, Save, X, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { toast } from 'sonner';
+
+const PILL = 'inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full';
+
+function AvailPill({ a }: { a: string }) {
+  const cls =
+    a === 'AVAILABLE' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
+    a === 'BUSY'      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' :
+    a === 'OFFLINE'   ? 'bg-muted text-muted-foreground' :
+    'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
+  return <span className={`${PILL} ${cls}`}>{a?.replace(/_/g, ' ')}</span>;
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/50 last:border-0">
+      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide min-w-[130px] shrink-0 pt-0.5">{label}</span>
+      <span className="text-[13px] text-foreground flex-1">{value ?? <span className="text-muted-foreground/40">—</span>}</span>
+    </div>
+  );
+}
+
+function SectionHeader({ icon: Icon, title, action }: { icon: any; title: string; action?: React.ReactNode }) {
+  return (
+    <div className="px-5 py-3.5 border-b border-border bg-background flex items-center gap-2">
+      <Icon className="h-4 w-4 text-muted-foreground" />
+      <h3 className="text-[13px] font-bold text-foreground flex-1">{title}</h3>
+      {action}
+    </div>
+  );
+}
 
 export default function AgentProfilePage() {
   const { agent } = useAgentAuth();
-  const [isEditing, setIsEditing] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    region: '',
-    expertise: [] as string[],
-    certifications: '',
-    availability: 'AVAILABLE',
-    gender: '',
-    joinedAt: '',
-  });
+
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ fullName: '', phone: '', region: '', availability: 'AVAILABLE', gender: '' });
+
+  // Password change
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [pwd, setPwd] = useState({ current: '', next: '', confirm: '' });
+  const [showCur, setShowCur] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [changingPwd, setChangingPwd] = useState(false);
 
   useEffect(() => {
     if (agent) {
-      setFormData({
+      setForm({
         fullName: agent.fullName || '',
-        email: agent.email || '',
         phone: agent.phone || '',
         region: agent.region || '',
-        expertise: Array.isArray(agent.expertise) ? agent.expertise : [],
-        certifications: agent.certifications || '',
         availability: agent.availability || 'AVAILABLE',
         gender: agent.gender || '',
-        joinedAt: agent.createdAt || '',
       });
     }
   }, [agent]);
 
-  const handleSave = async () => {
-    setIsLoading(true);
+  const startEdit = () => setEditing(true);
+  const cancelEdit = () => {
+    setEditing(false);
+    if (agent) setForm({ fullName: agent.fullName || '', phone: agent.phone || '', region: agent.region || '', availability: agent.availability || 'AVAILABLE', gender: agent.gender || '' });
+  };
+
+  const saveProfile = async () => {
+    if (!form.fullName.trim()) { toast.error('Full name is required'); return; }
+    setSaving(true);
     try {
-      // Add API call to update profile
-      console.log('Saving profile:', formData);
-      setIsEditing(false);
-    } catch (error) {
-      console.error('Error saving profile:', error);
+      const res = await agentAuthApi.updateProfile(form);
+      if (res.success) {
+        toast.success('Profile updated');
+        setEditing(false);
+      } else {
+        toast.error(res.message || 'Failed to update profile');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update profile');
     } finally {
-      setIsLoading(false);
+      setSaving(false);
     }
   };
 
-  const handleCancel = () => {
-    setIsEditing(false);
-    if (agent) {
-      setFormData({
-        fullName: agent.fullName || '',
-        email: agent.email || '',
-        phone: agent.phone || '',
-        region: agent.region || '',
-        expertise: Array.isArray(agent.expertise) ? agent.expertise : [],
-        certifications: agent.certifications || '',
-        availability: agent.availability || 'AVAILABLE',
-        gender: agent.gender || '',
-        joinedAt: agent.createdAt || '',
-      });
+  const changePassword = async () => {
+    if (!pwd.current || !pwd.next) { toast.error('Enter your current and new password'); return; }
+    if (pwd.next.length < 8) { toast.error('New password must be at least 8 characters'); return; }
+    if (pwd.next !== pwd.confirm) { toast.error('Passwords do not match'); return; }
+    setChangingPwd(true);
+    try {
+      const res = await agentAuthApi.changePassword(pwd.current, pwd.next);
+      if (res.success) {
+        toast.success('Password changed successfully');
+        setPwd({ current: '', next: '', confirm: '' });
+        setPwdOpen(false);
+      } else {
+        toast.error(res.message || 'Failed to change password');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Current password is incorrect');
+    } finally {
+      setChangingPwd(false);
     }
   };
 
   if (!agent) {
     return (
-      <div className="container mx-auto p-6 space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-96 w-full" />
+      <div className="space-y-6">
+        <div className="border-b-2 border-border pb-6 space-y-3">
+          <Skeleton className="h-3 w-20" /><Skeleton className="h-8 w-48" />
+        </div>
+        <div className="grid md:grid-cols-3 gap-5">
+          <Skeleton className="h-56 md:col-span-2" /><Skeleton className="h-56" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">My Profile</h1>
-          <p className="text-muted-foreground">Manage your personal information</p>
-        </div>
-        {!isEditing ? (
-          <Button onClick={() => setIsEditing(true)}>
-            <Edit className="h-4 w-4 mr-2" />
-            Edit Profile
-          </Button>
-        ) : (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleCancel}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={isLoading}>
-              {isLoading ? 'Saving...' : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Changes
-                </>
-              )}
-            </Button>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="border-b-2 border-border pb-6">
+        <p className="text-[11px] font-bold text-primary uppercase tracking-[0.1em] mb-1.5">My Account</p>
+        <div className="flex items-center gap-4">
+          <div className="flex size-12 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground shrink-0">
+            {agent.fullName?.[0]?.toUpperCase() || 'A'}
           </div>
-        )}
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-foreground">{agent.fullName}</h1>
+            <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2">
+              <span className="font-mono">{agent.employeeId}</span>
+              <AvailPill a={agent.availability} />
+            </p>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-1">
-          <CardHeader>
-            <CardTitle>Profile Overview</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-center py-8">
-              <div className="h-24 w-24 rounded-full bg-primary/10 flex items-center justify-center">
-                <User className="h-12 w-12 text-primary" />
-              </div>
-            </div>
-            <div className="text-center">
-              <h3 className="font-semibold text-lg">{formData.fullName}</h3>
-              <p className="text-sm text-muted-foreground">{formData.email}</p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span>{formData.region}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span>Joined: {new Date(formData.joinedAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-            <div className="pt-4 border-t">
-              <Badge variant={formData.availability === 'AVAILABLE' ? 'default' : 'secondary'}>
-                {formData.availability}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Personal Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="fullName"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    disabled={!isEditing}
-                    className="pl-10"
-                  />
+      <div className="grid md:grid-cols-3 gap-5 items-start">
+        {/* Personal info */}
+        <div className="md:col-span-2 space-y-5">
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader
+              icon={User}
+              title="Personal Information"
+              action={!editing
+                ? <button onClick={startEdit} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors"><Pencil className="h-3 w-3" />Edit</button>
+                : <div className="flex items-center gap-2">
+                    <button onClick={saveProfile} disabled={saving} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition-colors"><Save className="h-3 w-3" />{saving ? 'Saving…' : 'Save'}</button>
+                    <button onClick={cancelEdit} disabled={saving} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground transition-colors"><X className="h-3 w-3" />Cancel</button>
+                  </div>
+              }
+            />
+            <div className="px-5 py-3">
+              {editing ? (
+                <div className="grid sm:grid-cols-2 gap-3 py-2">
+                  <div className="space-y-1.5">
+                    <Label>Full Name</Label>
+                    <Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} className="h-9 text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Phone</Label>
+                    <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="h-9 text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Region</Label>
+                    <Input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} className="h-9 text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Gender</Label>
+                    <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary">
+                      <option value="">Select</option>
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label>Availability</Label>
+                    <select value={form.availability} onChange={(e) => setForm({ ...form, availability: e.target.value })} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary">
+                      <option value="AVAILABLE">Available</option>
+                      <option value="BUSY">Busy</option>
+                      <option value="OFFLINE">Offline</option>
+                      <option value="ON_LEAVE">On Leave</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <InfoRow label="Full Name"    value={agent.fullName} />
+                  <InfoRow label="Email"        value={<span className="font-mono">{agent.email}</span>} />
+                  <InfoRow label="Phone"        value={<span className="font-mono">{agent.phone}</span>} />
+                  <InfoRow label="Region"       value={agent.region} />
+                  <InfoRow label="Gender"       value={agent.gender} />
+                  <InfoRow label="Availability" value={<AvailPill a={agent.availability} />} />
+                </>
+              )}
+            </div>
+          </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    disabled={!isEditing}
-                    className="pl-10"
-                  />
+          {/* Password */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader
+              icon={KeyRound}
+              title="Security"
+              action={!pwdOpen
+                ? <button onClick={() => setPwdOpen(true)} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors"><KeyRound className="h-3 w-3" />Change Password</button>
+                : null
+              }
+            />
+            <div className="px-5 py-4">
+              {!pwdOpen ? (
+                <p className="text-sm text-muted-foreground">Your password is hidden. Change it anytime — you'll need your current password first.</p>
+              ) : (
+                <div className="space-y-3 max-w-md">
+                  <div className="space-y-1.5">
+                    <Label>Current Password</Label>
+                    <div className="relative">
+                      <Input type={showCur ? 'text' : 'password'} value={pwd.current} onChange={(e) => setPwd({ ...pwd, current: e.target.value })} placeholder="Enter current password" className="h-9 text-sm pr-9" />
+                      <button type="button" onClick={() => setShowCur((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showCur ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>New Password</Label>
+                    <div className="relative">
+                      <Input type={showNew ? 'text' : 'password'} value={pwd.next} onChange={(e) => setPwd({ ...pwd, next: e.target.value })} placeholder="At least 8 characters" className="h-9 text-sm pr-9" />
+                      <button type="button" onClick={() => setShowNew((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Confirm New Password</Label>
+                    <Input type="password" value={pwd.confirm} onChange={(e) => setPwd({ ...pwd, confirm: e.target.value })} placeholder="Re-enter new password" className="h-9 text-sm" />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" onClick={changePassword} disabled={changingPwd}>{changingPwd ? 'Updating…' : 'Update Password'}</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setPwdOpen(false); setPwd({ current: '', next: '', confirm: '' }); }} disabled={changingPwd}>Cancel</Button>
+                  </div>
                 </div>
-              </div>
+              )}
+            </div>
+          </div>
+        </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="phone"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    disabled={!isEditing}
-                    className="pl-10"
-                  />
+        {/* Sidebar — account meta + expertise */}
+        <div className="space-y-5">
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader icon={ShieldCheck} title="Account" />
+            <div className="px-5 py-3">
+              <InfoRow label="Employee ID"  value={<span className="font-mono">{agent.employeeId}</span>} />
+              <InfoRow label="Availability" value={<AvailPill a={agent.availability} />} />
+              <InfoRow label="Status"       value={agent.approvalStatus} />
+              <InfoRow label="Joined"       value={agent.createdAt ? new Date(agent.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+            </div>
+          </div>
+
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader icon={Star} title="Expertise" />
+            <div className="px-5 py-4">
+              {agent.expertise?.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                  {agent.expertise.map((e: string) => (
+                    <span key={e} className="text-[11px] font-semibold bg-primary/10 text-primary px-2.5 py-1 rounded-full">{e}</span>
+                  ))}
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="gender">Gender</Label>
-                <select
-                  id="gender"
-                  value={formData.gender}
-                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                  disabled={!isEditing}
-                  className="w-full px-3 py-2 border rounded-md bg-background"
-                >
-                  <option value="">Select Gender</option>
-                  <option value="MALE">Male</option>
-                  <option value="FEMALE">Female</option>
-                  <option value="OTHER">Other</option>
-                </select>
-              </div>
+              ) : (
+                <p className="text-xs text-muted-foreground/50 italic mb-3">No expertise listed</p>
+              )}
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-2">Certifications</p>
+              {agent.certifications?.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {agent.certifications.map((c: string) => (
+                    <span key={c} className="text-[11px] font-semibold bg-muted text-muted-foreground px-2.5 py-1 rounded-full">{c}</span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground/50 italic">No certifications listed</p>
+              )}
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="region">Region</Label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="region"
-                  value={formData.region}
-                  onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-                  disabled={!isEditing}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="availability">Availability Status</Label>
-              <select
-                id="availability"
-                value={formData.availability}
-                onChange={(e) => setFormData({ ...formData, availability: e.target.value })}
-                disabled={!isEditing}
-                className="w-full px-3 py-2 border rounded-md bg-background"
-              >
-                <option value="AVAILABLE">Available</option>
-                <option value="BUSY">Busy</option>
-                <option value="OFFLINE">Offline</option>
-                <option value="ON_LEAVE">On Leave</option>
-              </select>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-1 md:col-start-1 md:row-start-2">
-          <CardHeader>
-            <CardTitle>Expertise</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Briefcase className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Areas of Expertise</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {formData.expertise.map((expertise) => (
-                <Badge key={expertise} variant="secondary">
-                  {expertise}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2 md:row-start-2">
-          <CardHeader>
-            <CardTitle>Professional Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="certifications">Certifications</Label>
-              <div className="relative">
-                <Award className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Textarea
-                  id="certifications"
-                  value={formData.certifications}
-                  onChange={(e) => setFormData({ ...formData, certifications: e.target.value })}
-                  disabled={!isEditing}
-                  className="pl-10 min-h-[100px]"
-                  placeholder="List your certifications (comma separated)"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

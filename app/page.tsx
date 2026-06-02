@@ -10,6 +10,7 @@ import OtpPage from '@/components/auth/OtpPage';
 import PanVerificationPage from '@/components/auth/PanVerificationPage';
 import PaymentPage from '@/components/auth/PaymentPage';
 import ProfileSummaryPage from '@/components/auth/ProfileSummaryPage';
+import AddBusinessPage from '@/components/auth/AddBusinessPage';
 
 export default function Home() {
   const { authStep } = useMsmeAuth();
@@ -43,6 +44,7 @@ export default function Home() {
       {authStep === 'pan-verification' && <PanVerificationPage />}
       {authStep === 'payment' && <PaymentPage />}
       {authStep === 'profile-summary' && <ProfileSummaryPage />}
+      {authStep === 'add-business' && <AddBusinessPage />}
     </main>
   );
 }

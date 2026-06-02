@@ -15,6 +15,23 @@ export interface UserProfile {
   state: string;
 }
 
+export interface BusinessProfile {
+  id: number;
+  isPrimary?: boolean;
+  hasPaid?: boolean;
+  panNumber: string | null;
+  panVerified?: boolean;
+  gstin?: string | null;
+  legalNameOfBusiness?: string | null;
+  tradeNameOfBusiness?: string | null;
+  constitutionOfBusiness?: string | null;
+  businessType?: string | null;
+  businessSector?: string | null;
+  enterpriseCategory?: string | null;
+  principalState?: string | null;
+  state?: string | null;
+}
+
 export interface ExistingProfile {
   name: string | null;
   mobileNumber: string;
@@ -48,7 +65,10 @@ export interface AuthContextType {
   userId: string | null;
   userProfile: UserProfile | null;
   existingProfile: ExistingProfile | null;
-  authStep: 'landing' | 'otp' | 'pan-verification' | 'payment' | 'profile-summary' | 'authenticated';
+  businesses: BusinessProfile[];
+  activeBusinessId: number | null;
+  pendingBusinessId: number | null;
+  authStep: 'landing' | 'otp' | 'pan-verification' | 'payment' | 'profile-summary' | 'add-business' | 'authenticated';
   isLoading: boolean;
   isInitialized: boolean;
   error: string | null;
@@ -56,9 +76,13 @@ export interface AuthContextType {
   sendOtp: (mobile: string) => Promise<boolean>;
   setMobile: (mobile: string) => void;
   verifyOtp: (otp: string) => Promise<boolean>;
-  setPanAndProfile: (pan: string, profile: Omit<UserProfile, 'pan' | 'mobile' | 'userId'>, userId: string) => Promise<boolean>;
+  setPanAndProfile: (pan: string, profile: Omit<UserProfile, 'pan' | 'mobile' | 'userId'>, userId: string, businessId?: number | null) => Promise<boolean>;
   completePayment: () => Promise<boolean>;
   continueToDashboard: () => void;
+  refreshBusinesses: () => Promise<void>;
+  setActiveBusiness: (businessId: number) => Promise<boolean>;
+  startAddBusiness: () => Promise<boolean>;
+  goToAddBusinessHub: () => void;
   initiateDataRefresh: () => Promise<{ orderId: string; amount: number; currency: string; keyId: string } | null>;
   completeDataRefresh: (orderId: string, paymentId: string, signature: string) => Promise<boolean>;
   logout: () => void;
@@ -73,6 +97,9 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
   const [userId, setUserId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [existingProfile, setExistingProfile] = useState<ExistingProfile | null>(null);
+  const [businesses, setBusinesses] = useState<BusinessProfile[]>([]);
+  const [activeBusinessId, setActiveBusinessId] = useState<number | null>(null);
+  const [pendingBusinessId, setPendingBusinessId] = useState<number | null>(null);
   const [authStep, setAuthStep] = useState<AuthContextType['authStep']>('landing');
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -90,6 +117,9 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       setUserId(savedUserId);
       setMobileState(savedMobile);
       setAuthStep('authenticated');
+
+      const savedActiveBiz = sessionStorage.getItem('msme_active_business');
+      if (savedActiveBiz) setActiveBusinessId(Number(savedActiveBiz));
 
       // Only set profile if it exists in sessionStorage
       if (savedProfile) {
@@ -202,28 +232,36 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // The PAN has ALREADY been verified (and persisted) by the verify step that
+  // returned `businessId`. This only saves the personal name/email and advances
+  // to payment — it does NOT re-call /verify-pan (no second Signzy charge).
   const setPanAndProfile = async (
     pan: string,
     profile: Omit<UserProfile, 'pan' | 'mobile' | 'userId'>,
-    userId: string
+    userId: string,
+    businessId?: number | null,
   ): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
     try {
-      // Call backend verify-pan endpoint
-      const response = await fetch(`${API_BASE_URL}/api/msme-auth/verify-pan`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ pan, userId }),
-      });
+      // Track the business this PAN was attached to (used for the payment step).
+      if (businessId) setPendingBusinessId(Number(businessId));
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.message || 'PAN verification failed');
+      // Persist personal name + email to the DB so we don't re-ask for it on the
+      // dashboard (CompleteProfileModal triggers when the stored email is empty).
+      if (profile.email || profile.name) {
+        try {
+          await fetch(`${API_BASE_URL}/api/msme-auth/profile`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ name: profile.name, email: profile.email }),
+          });
+        } catch {
+          /* non-fatal — user can still complete it later */
+        }
       }
 
       const fullProfile: UserProfile = {
@@ -239,7 +277,7 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       setAuthStep('payment');
       return true;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'PAN verification failed';
+      const message = err instanceof Error ? err.message : 'Failed to save profile';
       setError(message);
       return false;
     } finally {
@@ -272,15 +310,15 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ userId, action: 'PAN_VERIFICATION' }),
+        body: JSON.stringify({ userId, action: 'PAN_VERIFICATION', businessId: pendingBusinessId ?? undefined }),
       });
 
       const checkData = await checkResponse.json();
 
-      // Only skip to dashboard if user has explicitly already paid
+      // This business is already paid for — jump to the add-business hub.
       if (checkData.hasPaid === true) {
-        setAuthStep('authenticated');
-        router.push('/dashboard');
+        await refreshBusinesses();
+        setAuthStep('add-business');
         return true;
       }
 
@@ -291,7 +329,7 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ userId, paymentType: 'PAN_VERIFICATION', mobile }),
+        body: JSON.stringify({ userId, paymentType: 'PAN_VERIFICATION', mobile, businessId: pendingBusinessId ?? undefined }),
       });
 
       const orderData = await orderResponse.json();
@@ -324,8 +362,11 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
 
           const verifyData = await verifyRes.json();
           if (verifyData.success) {
-            setAuthStep('authenticated');
-            router.push('/dashboard');
+            // Business is now registered + paid; show the hub so the user can
+            // add more businesses or continue to the dashboard.
+            await refreshBusinesses();
+            setPendingBusinessId(null);
+            setAuthStep('add-business');
           } else {
             setError(verifyData.message || 'Payment verification failed');
           }
@@ -360,8 +401,66 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const continueToDashboard = () => {
+    setPendingBusinessId(null);
     setAuthStep('authenticated');
     router.push('/dashboard');
+  };
+
+  const refreshBusinesses = async (): Promise<void> => {
+    const authToken = token || sessionStorage.getItem('msme_auth_token');
+    if (!authToken) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/msme-auth/businesses`, {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBusinesses(data.businesses || []);
+        const active = data.activeBusinessId ?? data.businesses?.[0]?.id ?? null;
+        if (active != null) {
+          setActiveBusinessId(Number(active));
+          sessionStorage.setItem('msme_active_business', String(active));
+        }
+      }
+    } catch {
+      /* non-fatal */
+    }
+  };
+
+  const setActiveBusiness = async (businessId: number): Promise<boolean> => {
+    const authToken = token || sessionStorage.getItem('msme_auth_token');
+    if (!authToken) return false;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/msme-auth/businesses/active`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId }),
+      });
+      const data = await res.json();
+      if (!data.success) return false;
+      setActiveBusinessId(Number(businessId));
+      sessionStorage.setItem('msme_active_business', String(businessId));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Begin adding a new business: navigate directly to PAN verification.
+  // The business row is created only after PAN is successfully verified,
+  // so no orphan placeholder rows are left if the user abandons the flow.
+  const startAddBusiness = async (): Promise<boolean> => {
+    const authToken = token || sessionStorage.getItem('msme_auth_token');
+    if (!authToken) return false;
+    setPendingBusinessId(null);  // no pre-created row
+    setAuthStep('pan-verification');
+    router.push('/');
+    return true;
+  };
+
+  const goToAddBusinessHub = () => {
+    setAuthStep('add-business');
+    router.push('/');
   };
 
   const initiateDataRefresh = async (): Promise<{ orderId: string; amount: number; currency: string; keyId: string } | null> => {
@@ -445,7 +544,11 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     sessionStorage.removeItem('msme_profile');
     sessionStorage.removeItem('msme_mobile');
     sessionStorage.removeItem('msme_user_id');
+    sessionStorage.removeItem('msme_active_business');
     setExistingProfile(null);
+    setBusinesses([]);
+    setActiveBusinessId(null);
+    setPendingBusinessId(null);
     router.push('/');
   };
 
@@ -455,6 +558,9 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     userId,
     userProfile,
     existingProfile,
+    businesses,
+    activeBusinessId,
+    pendingBusinessId,
     authStep,
     isLoading,
     isInitialized,
@@ -465,6 +571,10 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     setPanAndProfile,
     completePayment,
     continueToDashboard,
+    refreshBusinesses,
+    setActiveBusiness,
+    startAddBusiness,
+    goToAddBusinessHub,
     initiateDataRefresh,
     completeDataRefresh,
     logout,
