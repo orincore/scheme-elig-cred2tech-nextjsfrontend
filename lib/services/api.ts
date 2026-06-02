@@ -252,6 +252,40 @@ export const casesApi = {
     body: JSON.stringify(data),
   }, 'msme'),
 
+  createCaseWithDocuments: async (
+    data: {
+      msmeUserId: number;
+      schemeId: string;
+      schemeName?: string;
+      applicationData?: any;
+    },
+    documents: File[]
+  ): Promise<any> => {
+    const token = getToken('msme');
+    const formData = new FormData();
+    
+    // Add case data as JSON string
+    formData.append('caseData', JSON.stringify(data));
+    
+    // Add document files
+    documents.forEach((file, index) => {
+      formData.append('documents', file);
+    });
+
+    const response = await fetch(`${API_BASE_URL}/api/cases/internal/create-with-documents`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    if (response.status === 401) throw new Error('Invalid token');
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err?.message || `Application submission failed: ${response.status}`);
+    }
+    return response.json();
+  },
+
   getMsmeCases: (msmeUserId?: number, status?: string) => {
     const params = new URLSearchParams();
     if (msmeUserId) params.append('msmeUserId', msmeUserId.toString());

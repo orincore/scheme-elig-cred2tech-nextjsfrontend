@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { casesApi } from '@/lib/services/api';
+import { casesApi, API_BASE_URL } from '@/lib/services/api';
+import { DocumentUploadDialog, type DocumentFile } from './DocumentUploadDialog';
 
 // ── Text helpers ──────────────────────────────────────────────────────────────
 
@@ -304,6 +305,7 @@ export default function SchemeDetails({ scheme }: { scheme: Scheme }) {
   const [detailFetched, setDetailFetched]   = useState(false);
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [isApplied, setIsApplied]           = useState(false);
+  const [showDocUpload, setShowDocUpload]   = useState(false);
 
   const isSaved = savedSchemes.some((s) => s.id === scheme.id);
 
@@ -368,29 +370,78 @@ export default function SchemeDetails({ scheme }: { scheme: Scheme }) {
     const msmeUserId = userId ? parseInt(userId) : null;
     if (!msmeUserId) { toast.error('Invalid user information. Please login again.'); return; }
 
+    // Show document upload dialog
+    setShowDocUpload(true);
+  };
+
+  const handleDocumentUploadComplete = async (uploadedDocuments: DocumentFile[]) => {
+    const msmeUserId = userId ? parseInt(userId) : null;
+    if (!msmeUserId) return;
+
     setIsCreatingCase(true);
+    setShowDocUpload(false);
+
     try {
       const businessName =
         existingProfile?.legalNameOfBusiness ||
         existingProfile?.tradeNameOfBusiness ||
         userProfile?.name || 'Unknown Business';
 
-      const res = await casesApi.createCase({
-        msmeUserId,
-        schemeId: scheme.id,
-        schemeName: scheme.schemeName,
-        applicationData: { businessName, description: scheme.briefDescription, existingProfile },
-      });
+      const applicationData: any = {
+        businessName,
+        description: scheme.briefDescription,
+        existingProfile,
+      };
+
+      let res;
+
+      // If documents were uploaded, use the special endpoint
+      if (uploadedDocuments.length > 0) {
+        const files = uploadedDocuments.map((doc) => doc.file);
+        
+        applicationData.initialDocuments = uploadedDocuments.map((doc) => ({
+          name: doc.name,
+          size: doc.size,
+          type: doc.type,
+        }));
+        applicationData.hasInitialDocuments = true;
+
+        res = await casesApi.createCaseWithDocuments(
+          {
+            msmeUserId,
+            schemeId: scheme.id,
+            schemeName: scheme.schemeName,
+            applicationData,
+          },
+          files
+        );
+
+        const docCount = uploadedDocuments.length;
+        toast.success(
+          `Application submitted with ${docCount} document${docCount > 1 ? 's' : ''}! An agent will be assigned within 24 hours.`,
+          { duration: 5000 }
+        );
+      } else {
+        // No documents, use standard endpoint
+        res = await casesApi.createCase({
+          msmeUserId,
+          schemeId: scheme.id,
+          schemeName: scheme.schemeName,
+          applicationData,
+        });
+
+        toast.success('Application received! An agent will be assigned within 24 hours.', { duration: 5000 });
+      }
 
       if (res.success || res.case) {
         setIsApplied(true);
         localStorage.setItem(`applied_scheme_${scheme.id}`, 'true');
-        toast.success('Application received! An agent will be assigned within 24 hours.', { duration: 5000 });
       } else {
         toast.error('Failed to submit application. Please try again.');
       }
-    } catch {
-      toast.error('Failed to submit application. Please try again.');
+    } catch (err: any) {
+      console.error('Application submission failed:', err);
+      toast.error(err.message || 'Failed to submit application. Please try again.');
     } finally {
       setIsCreatingCase(false);
     }
@@ -776,6 +827,15 @@ export default function SchemeDetails({ scheme }: { scheme: Scheme }) {
           )}
         </div>
       </div>
+
+      {/* Document Upload Dialog */}
+      <DocumentUploadDialog
+        open={showDocUpload}
+        onOpenChange={setShowDocUpload}
+        requiredDocuments={documents}
+        onComplete={handleDocumentUploadComplete}
+        schemeName={scheme.schemeName}
+      />
     </div>
   );
 }

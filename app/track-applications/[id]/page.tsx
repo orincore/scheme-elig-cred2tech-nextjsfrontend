@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DocumentViewer } from '@/components/ui/document-viewer';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -38,6 +39,8 @@ import {
   Briefcase,
   CreditCard,
   Globe,
+  Eye,
+  FolderOpen,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -225,6 +228,10 @@ export default function MsmeCaseDetailPage() {
 
   const [docRequests, setDocRequests] = useState<DocumentRequest[]>([]);
   const [reqsLoading, setReqsLoading] = useState(false);
+
+  const [caseDocuments, setCaseDocuments] = useState<any[]>([]);
+  const [viewerUrl, setViewerUrl]         = useState<string | null>(null);
+  const [viewerName, setViewerName]       = useState<string>('');
 
   const [uploadOpen, setUploadOpen]     = useState(false);
   const [uploadFile, setUploadFile]     = useState<File | null>(null);
