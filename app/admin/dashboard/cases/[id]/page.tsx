@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
-import { casesApi } from '@/lib/services/api';
+import { casesApi, API_BASE_URL } from '@/lib/services/api';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -246,7 +246,7 @@ export default function AdminCaseDetailPage() {
   const fetchDocuments = async () => {
     setDocsLoading(true);
     try {
-      const res = await fetch('http://localhost:3001/api/cases/admin/' + caseId + '/documents', {
+      const res = await fetch(`${API_BASE_URL}/api/cases/admin/${caseId}/documents`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('admin_token')}`
         }
@@ -277,7 +277,7 @@ export default function AdminCaseDetailPage() {
       const formData = new FormData();
       formData.append('file', uploadFile);
       
-      const res = await fetch('http://localhost:3001/api/cases/admin/' + caseId + '/documents', {
+      const res = await fetch(`${API_BASE_URL}/api/cases/admin/${caseId}/documents`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('admin_token')}`
@@ -311,7 +311,7 @@ export default function AdminCaseDetailPage() {
     }
     setRequesting(true);
     try {
-      const res = await fetch('http://localhost:3001/api/cases/admin/' + caseId + '/document-requests', {
+      const res = await fetch(`${API_BASE_URL}/api/cases/admin/${caseId}/document-requests`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
@@ -587,7 +587,7 @@ export default function AdminCaseDetailPage() {
                         </div>
                       </div>
                       <button
-                        onClick={() => window.open(`http://localhost:3001${doc.file_url}`, '_blank')}
+                        onClick={() => window.open(`${API_BASE_URL}${doc.file_url}`, '_blank')}
                         className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
                       >
                         <Download className="h-3 w-3" />Open
