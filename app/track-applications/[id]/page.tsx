@@ -282,14 +282,29 @@ export default function MsmeCaseDetailPage() {
     }
   };
 
+  const fetchCaseDocuments = async () => {
+    if (!userId || !caseId) return;
+    try {
+      const res = await casesApi.getMsmeCaseDocuments(caseId, parseInt(userId));
+      if (res.success) setCaseDocuments(res.documents || []);
+    } catch (err: any) {
+      console.error('Failed to load case documents:', err.message);
+    }
+  };
+
   useEffect(() => {
     const load = async () => {
       if (!userId) { setIsLoading(false); return; }
-      await Promise.all([fetchCaseDetails(), fetchDocumentRequests()]);
+      await Promise.all([fetchCaseDetails(), fetchDocumentRequests(), fetchCaseDocuments()]);
       setIsLoading(false);
     };
     if (authStep === 'authenticated') load();
   }, [authStep, userId, caseId]);
+
+  const openDocument = (doc: { file_url: string; file_name: string }) => {
+    setViewerUrl(`${API_BASE_URL}${doc.file_url}`);
+    setViewerName(doc.file_name);
+  };
 
   // ── Upload ─────────────────────────────────────────────────────────────────
 
@@ -303,7 +318,7 @@ export default function MsmeCaseDetailPage() {
       setUploadFile(null);
       setActiveRequest(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      await Promise.all([fetchDocumentRequests(), fetchCaseDetails()]);
+      await Promise.all([fetchDocumentRequests(), fetchCaseDetails(), fetchCaseDocuments()]);
     } catch (err: any) {
       toast.error(err.message || 'Upload failed. Please try again.');
     } finally {
@@ -623,6 +638,65 @@ export default function MsmeCaseDetailPage() {
           </SectionBox>
         )}
 
+        {/* ─── Submitted Documents ──────────────────────────────────────────── */}
+        {caseDocuments.length > 0 && (
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-[13px] font-bold text-foreground flex items-center gap-2">
+                  <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                  Your Documents
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                    {caseDocuments.length}
+                  </span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Documents submitted for this application</p>
+              </div>
+              <button
+                onClick={fetchCaseDocuments}
+                className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </button>
+            </div>
+            <div className="divide-y divide-border">
+              {caseDocuments.map((doc) => (
+                <div key={doc.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-muted/10 transition-colors">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-md bg-muted shrink-0">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{doc.file_name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {doc.file_size ? formatBytes(Number(doc.file_size)) : ''}
+                      {doc.uploaded_at && ` · ${new Date(doc.uploaded_at).toLocaleDateString()}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => openDocument(doc)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
+                    >
+                      <Eye className="h-3 w-3" />
+                      View
+                    </button>
+                    <a
+                      href={`${API_BASE_URL}${doc.file_url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-foreground bg-muted/30 hover:bg-muted/60 transition-colors"
+                    >
+                      <Download className="h-3 w-3" />
+                      Download
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ─── Document Requests Table ──────────────────────────────────────── */}
         {docRequests.length > 0 && (
           <div className="bg-card border border-border rounded-none overflow-hidden">
@@ -695,15 +769,13 @@ export default function MsmeCaseDetailPage() {
                           </button>
                         )}
                         {req.status === 'UPLOADED' && req.file_url && (
-                          <a
-                            href={`${API_BASE_URL}${req.file_url}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={() => openDocument({ file_url: req.file_url!, file_name: req.document_name })}
                             className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-foreground bg-muted/30 hover:bg-muted/60 transition-colors"
                           >
-                            <Download className="h-3 w-3" />
+                            <Eye className="h-3 w-3" />
                             View File
-                          </a>
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -852,6 +924,15 @@ export default function MsmeCaseDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Document Viewer ───────────────────────────────────────────────── */}
+      {viewerUrl && (
+        <DocumentViewer
+          fileUrl={viewerUrl}
+          fileName={viewerName}
+          onClose={() => { setViewerUrl(null); setViewerName(''); }}
+        />
+      )}
     </DashboardLayout>
   );
 }

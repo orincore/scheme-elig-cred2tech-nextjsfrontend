@@ -296,6 +296,10 @@ export const casesApi = {
 
   getMsmeCaseDetails: (caseId: string, msmeUserId: number) => fetchApi(`/api/cases/msme/${caseId}?msmeUserId=${msmeUserId}`, {}, 'msme'),
 
+  // Documents the MSME user uploaded for one of their own cases
+  getMsmeCaseDocuments: (caseId: string, msmeUserId: number) =>
+    fetchApi(`/api/cases/msme/${caseId}/documents?msmeUserId=${msmeUserId}`, {}, 'msme'),
+
   deleteCase: (caseId: string, msmeUserId: number) => fetchApi(`/api/cases/msme/${caseId}?msmeUserId=${msmeUserId}`, {
     method: 'DELETE',
   }, 'msme'),
