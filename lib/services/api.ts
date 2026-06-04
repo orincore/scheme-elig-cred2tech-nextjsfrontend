@@ -236,6 +236,10 @@ export const adminAuthApi = {
 
   getMsmeUserDetail: (id: string | number) =>
     fetchApi(`/api/admin-auth/msme-users/${id}`, {}, 'admin'),
+
+  // Force-delete an MSME user and ALL their records (cases, businesses, snapshots…).
+  forceDeleteMsmeUser: (id: string | number) =>
+    fetchApi(`/api/admin-auth/msme-users/${id}/force`, { method: 'DELETE' }, 'admin'),
 };
 
 // ==================== CASE APIs ====================

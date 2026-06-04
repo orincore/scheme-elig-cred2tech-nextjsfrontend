@@ -64,7 +64,7 @@ const RESIDENCE_OPTIONS = [
 ];
 
 const YESNO_FIELDS: { key: string; label: string }[] = [
-  { key: 'isStartup',         label: 'Startup (DPIIT recognised)' },
+  { key: 'isStartup',         label: 'Startup' },
   { key: 'udyamRegistered',   label: 'Udyam Registered' },
   { key: 'differently_abled', label: 'Differently Abled (Disability)' },
   { key: 'minority',          label: 'Minority' },

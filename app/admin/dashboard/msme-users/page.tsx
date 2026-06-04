@@ -6,7 +6,11 @@ import { adminAuthApi } from '@/lib/services/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building2, Search, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
+import { Building2, Search, ChevronLeft, ChevronRight, ExternalLink, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PILL = 'inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full';
@@ -36,6 +40,8 @@ export default function MsmeUsersPage() {
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const PAGE_SIZE = 20;
 
   const load = useCallback(async (q: string, p: number) => {
@@ -59,6 +65,26 @@ export default function MsmeUsersPage() {
     e.preventDefault();
     setPage(1);
     setSearch(searchInput);
+  };
+
+  const handleForceDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await adminAuthApi.forceDeleteMsmeUser(deleteTarget.id);
+      if (res?.success) {
+        toast.success(res.message || 'User and all records deleted');
+        setDeleteTarget(null);
+        setUsers((prev) => prev.filter((x) => x.id !== deleteTarget.id));
+        setTotal((t) => Math.max(0, t - 1));
+      } else {
+        toast.error(res?.message || 'Failed to delete user');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to delete user');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -181,12 +207,21 @@ export default function MsmeUsersPage() {
                       <CaseBadge active={u.activeCases} />
                     </td>
                     <td className="px-5 py-4">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); router.push(`/admin/dashboard/msme-users/${u.msmCode}`); }}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors"
-                      >
-                        <ExternalLink className="h-3 w-3" />View
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push(`/admin/dashboard/msme-users/${u.msmCode}`); }}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors"
+                        >
+                          <ExternalLink className="h-3 w-3" />View
+                        </button>
+                        <button
+                          title="Force delete user and all records"
+                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(u); }}
+                          className="inline-flex items-center justify-center p-1.5 rounded-md border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 dark:border-red-900/40 dark:text-red-400 dark:bg-red-900/20 dark:hover:bg-red-900/40 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -212,6 +247,41 @@ export default function MsmeUsersPage() {
           </div>
         )}
       </div>
+
+      {/* Force-delete confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o && !deleting) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-4 w-4" /> Force delete MSME user?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  This permanently deletes <span className="font-semibold text-foreground">{deleteTarget?.name || `#${deleteTarget?.id}`}</span>
+                  {deleteTarget?.mobile ? <> ({deleteTarget.mobile})</> : null} and <span className="font-semibold">ALL</span> related records:
+                </p>
+                <ul className="list-disc pl-5 text-muted-foreground text-[13px]">
+                  <li>Scheme cases + history, documents &amp; document requests</li>
+                  <li>Businesses, payments, OTP verifications</li>
+                  <li>Eligibility snapshots &amp; saved eligible schemes</li>
+                </ul>
+                <p className="text-red-600 font-medium">This cannot be undone.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleForceDelete(); }}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              {deleting ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Deleting…</> : 'Force delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

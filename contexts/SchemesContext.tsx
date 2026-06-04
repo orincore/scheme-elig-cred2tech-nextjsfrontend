@@ -223,6 +223,24 @@ const REQUIRED_SEARCH_FIELDS: MissingField[] = [
     ],
   },
   {
+    key: 'is_startup',
+    label: 'Is your business a Startup?',
+    type: 'select',
+    options: [
+      { value: 'true',  label: 'Yes' },
+      { value: 'false', label: 'No' },
+    ],
+  },
+  {
+    key: 'udyam_registered',
+    label: 'Is your business Udyam (MSME) registered?',
+    type: 'select',
+    options: [
+      { value: 'true',  label: 'Yes' },
+      { value: 'false', label: 'No' },
+    ],
+  },
+  {
     key: 'benefit_focus',
     label: 'Primary Benefit Focus',
     type: 'select',
@@ -319,6 +337,14 @@ const PROFILE_SOURCE_MAP: Record<string, (p: Record<string, any>) => any> = {
   total_employees:   (p) => p.total_employees || p.totalEmployees,
   business_type:     (p) => p.businessType || p.business_type || p.entityType || p.entity_type,
   business_stage:    (p) => p.businessStage || p.business_stage,
+  is_startup:        (p) => {
+    const v = p.isStartup ?? p.is_startup;
+    return (v !== undefined && v !== null) ? String(v) : undefined;
+  },
+  udyam_registered:  (p) => {
+    const v = p.udyamRegistered ?? p.udyam_registered;
+    return (v !== undefined && v !== null) ? String(v) : undefined;
+  },
   benefit_focus:     (p) => p.benefitFocus || p.benefit_focus,
   state:             (p) => p.state || p.principalState,
   gender:            (p) => p.gender,
@@ -334,6 +360,7 @@ const DB_SAVE_KEY_MAP: Record<string, string> = {
   total_employees: 'total_employees', business_type: 'businessType', business_stage: 'businessStage',
   benefit_focus: 'benefitFocus', state: 'state', gender: 'gender', caste: 'caste', age: 'age',
   differently_abled: 'differently_abled', bpl: 'bpl', minority: 'minority',
+  udyam_registered: 'udyamRegistered', is_startup: 'isStartup',
 };
 
 function getMissingFields(rawProfile: Record<string, any>): MissingField[] {
@@ -709,6 +736,28 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
         body: JSON.stringify({ refresh: opts?.refresh === true, businessId: getActiveBusinessId() }),
       });
       const data = await res.json();
+
+      // The engine refuses to run until the business sector/industry is set.
+      // Surface the profile-completion modal instead of erroring, then stop.
+      if (data?.requiresProfile) {
+        try {
+          const mobile = sessionStorage.getItem('msme_mobile');
+          const profileRes = await fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobile}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` },
+          });
+          const profileData = await profileRes.json();
+          const profile = profileData?.user || {};
+          const missing = getMissingFields(profile);
+          setPendingRawProfile(profile);
+          // Always include the sector field the engine asked for.
+          setMissingFields(missing.length > 0 ? missing : REQUIRED_SEARCH_FIELDS.filter((f) => f.key === 'sector'));
+          setShowMissingFieldsModal(true);
+        } catch { /* best-effort */ }
+        setAnalysisStatus('idle');
+        setIsLoading(false);
+        return;
+      }
+
       if (!res.ok || !data?.success || !data?.sessionId) {
         throw new Error(data?.error || `Analysis failed (status ${res.status})`);
       }
@@ -925,7 +974,7 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
       } else if (searchKey === 'total_employees') {
         const E: Record<string, number> = { '1_5': 3, '6_25': 15, '26_100': 60, '101_500': 250, '501_plus': 600 };
         dbPayload['total_employees'] = E[val] ?? null;
-      } else if (['differently_abled', 'bpl', 'minority'].includes(searchKey)) {
+      } else if (['differently_abled', 'bpl', 'minority', 'udyam_registered', 'is_startup'].includes(searchKey)) {
         dbPayload[dbKey] = val === 'true';
       } else {
         dbPayload[dbKey] = val;
