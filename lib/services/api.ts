@@ -450,4 +450,13 @@ export const casesApi = {
   }, 'admin'),
 };
 
+export const msmeAuthApi = {
+  sendEligibilityReport: (token: string, schemes: object[], pdfBase64?: string) =>
+    fetch(`${API_BASE_URL}/api/msme-auth/send-eligibility-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ schemes, pdfBase64 }),
+    }).then((r) => r.json()),
+};
+
 export { API_BASE_URL, getToken };

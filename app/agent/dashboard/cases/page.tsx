@@ -36,6 +36,7 @@ const STATUS_FILTERS = [
   { value: 'UNDER_REVIEW', label: 'Under Review' },
   { value: 'DOCUMENTS_PENDING', label: 'Docs Pending' },
   { value: 'APPROVED', label: 'Approved' },
+  { value: 'REJECTED', label: 'Rejected' },
   { value: 'CLOSED', label: 'Closed' },
 ];
 
@@ -87,7 +88,7 @@ export default function AgentCasesPage() {
           <div className="w-px h-8 bg-border" />
           <div><p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">Active</p><p className="text-2xl font-bold text-amber-500">{assignedCases.filter((c: any) => !['CLOSED','APPROVED','REJECTED'].includes(c.status)).length}</p></div>
           <div className="w-px h-8 bg-border" />
-          <div><p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">Docs Pending</p><p className="text-2xl font-bold text-orange-500">{assignedCases.filter((c: any) => c.status === 'DOCUMENTS_PENDING').length}</p></div>
+          <div><p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">Docs Pending</p><p className="text-2xl font-bold text-orange-500">{assignedCases.filter((c: any) => c.status === 'DOCUMENTS_PENDING' || (c.pendingDocRequests ?? 0) > 0).length}</p></div>
         </div>
       </div>
 

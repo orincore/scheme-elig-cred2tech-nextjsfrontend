@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSchemes, SchemeDecisionItem } from '@/contexts/SchemesContext';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { getOwnedDocs, OwnedDocs } from '@/lib/documentMatch';
@@ -15,11 +15,12 @@ import { payForService } from '@/lib/razorpayCheckout';
 import { toast } from 'sonner';
 import SchemeDecisionCard from './SchemeDecisionCard';
 import QuestionsModal from './QuestionsModal';
-import { generateEligibilityReport, ReportScheme } from '@/lib/generateEligibilityReport';
+import { generateEligibilityReport, generateEligibilityReportBytes, ReportScheme } from '@/lib/generateEligibilityReport';
+import { msmeAuthApi } from '@/lib/services/api';
 import {
   RefreshCw, CheckCircle2, HelpCircle, XCircle, Search, Loader2, Target, AlertTriangle,
   LayoutGrid, Landmark, Sprout, TrendingUp, BadgePercent, Award, ReceiptText,
-  GraduationCap, Megaphone, Cpu, Layers, PartyPopper, FileDown, type LucideIcon,
+  GraduationCap, Megaphone, Cpu, Layers, PartyPopper, FileDown, Mail, type LucideIcon,
 } from 'lucide-react';
 import { Typewriter } from '@/components/ui/typewriter';
 
@@ -90,6 +91,37 @@ export default function EligibilityDashboard() {
   const { token, userId, userProfile, mobile, activeBusinessId, businesses } = useMsmeAuth();
   const [ownedDocs, setOwnedDocs] = useState<OwnedDocs>(() => getOwnedDocs(null));
   const [downloadingReport, setDownloadingReport] = useState(false);
+  const [sendingReport, setSendingReport] = useState(false);
+
+  const REPORT_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+  const COOLDOWN_KEY = 'eligibility_report_sent_at';
+
+  // minsLeft: how many full minutes remain in the cooldown (0 = no cooldown).
+  const calcMinsLeft = () => {
+    const sent = typeof window !== 'undefined' ? localStorage.getItem(COOLDOWN_KEY) : null;
+    if (!sent) return 0;
+    const remaining = REPORT_COOLDOWN_MS - (Date.now() - Number(sent));
+    return remaining > 0 ? Math.ceil(remaining / 60_000) : 0;
+  };
+  const [reportMinsLeft, setReportMinsLeft] = useState<number>(0);
+  const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Bootstrap cooldown from localStorage on mount.
+  useEffect(() => {
+    setReportMinsLeft(calcMinsLeft());
+  }, []);
+
+  // When cooldown is active, tick every 30 s to keep the label current.
+  useEffect(() => {
+    if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    if (reportMinsLeft <= 0) return;
+    cooldownTimerRef.current = setInterval(() => {
+      const mins = calcMinsLeft();
+      setReportMinsLeft(mins);
+      if (mins <= 0 && cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    }, 30_000);
+    return () => { if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current); };
+  }, [reportMinsLeft]);
 
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('eligible');
@@ -205,6 +237,70 @@ export default function EligibilityDashboard() {
     }
   };
 
+  // ── Send eligibility report to MSME email ─────────────────────────────────
+  const handleSendReport = async () => {
+    if (eligibleItems.length === 0) { toast.error('No eligible schemes to include yet'); return; }
+    const authToken = token || sessionStorage.getItem('msme_auth_token') || '';
+    if (!authToken) { toast.error('Please log in to send the report'); return; }
+    setSendingReport(true);
+    try {
+      const mobileNumber = userProfile?.mobile || mobile || sessionStorage.getItem('msme_mobile') || '';
+      const biz = businesses.find((b) => b.id === activeBusinessId) || businesses[0];
+
+      let sector: string | null = null, state: string | null = null;
+      let type: string | null = null, enterpriseCategory: string | null = null;
+      let legalName = biz?.legalNameOfBusiness || null;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobileNumber}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        const d = await res.json();
+        if (d?.success && d.user) {
+          sector = d.user.businessSector ?? null;
+          state = d.user.state ?? null;
+          type = d.user.businessType ?? null;
+          enterpriseCategory = d.user.enterpriseCategory ?? null;
+          legalName = legalName || d.user.legalNameOfBusiness || d.user.name || null;
+        }
+      } catch { /* report still works with what we have */ }
+
+      const schemes: ReportScheme[] = eligibleItems.map(({ scheme, decision }) => ({
+        name: scheme.schemeName || scheme.schemeShortTitle || 'Scheme',
+        ministry: scheme.nodalMinistryName || null,
+        level: scheme.level || scheme.schemeLevel || null,
+        category: (scheme.schemeCategory || [])[0] || null,
+        confidence: decision.confidence || null,
+        briefDescription: scheme.briefDescription || null,
+        benefits: scheme.benefits || null,
+        notes: decision.important_notes || null,
+        whyEligible: (decision.verified_criteria?.length ? decision.verified_criteria : decision.reasons) || [],
+      }));
+
+      // Generate PDF bytes in the browser, then base64-encode for the API
+      const pdfBytes = await generateEligibilityReportBytes({
+        user: { name: userProfile?.name || null },
+        business: { legalName, sector, state, type, enterpriseCategory },
+        schemes,
+      });
+      let binary = '';
+      for (let i = 0; i < pdfBytes.length; i++) binary += String.fromCharCode(pdfBytes[i]);
+      const pdfBase64 = btoa(binary);
+
+      const res = await msmeAuthApi.sendEligibilityReport(authToken, schemes, pdfBase64);
+      if (res?.success) {
+        toast.success(res.message || 'Report sent to your email');
+        localStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+        setReportMinsLeft(calcMinsLeft());
+      } else {
+        toast.error(res?.message || 'Could not send the report. Please try again.');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not send the report. Please try again.');
+    } finally {
+      setSendingReport(false);
+    }
+  };
+
   // Fetch the user's profile once to know which required documents they already hold.
   useEffect(() => {
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
@@ -273,11 +369,20 @@ export default function EligibilityDashboard() {
         </div>
         <div className="flex items-center gap-2">
           {eligibleItems.length > 0 && (
-            <Button onClick={handleDownloadReport} disabled={downloadingReport || analyzing} variant="outline">
-              {downloadingReport
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Preparing…</>
-                : <><FileDown className="w-4 h-4 mr-2" /> Download report</>}
-            </Button>
+            <>
+              <Button onClick={handleDownloadReport} disabled={downloadingReport || analyzing} variant="outline">
+                {downloadingReport
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Preparing…</>
+                  : <><FileDown className="w-4 h-4 mr-2" /> Download report</>}
+              </Button>
+              <Button onClick={handleSendReport} disabled={sendingReport || analyzing || reportMinsLeft > 0} variant="outline">
+                {sendingReport
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending…</>
+                  : reportMinsLeft > 0
+                    ? <><Mail className="w-4 h-4 mr-2" /> Sent ({reportMinsLeft}m)</>
+                    : <><Mail className="w-4 h-4 mr-2" /> Send to email</>}
+              </Button>
+            </>
           )}
           <Button onClick={() => setReanalyzeOpen(true)} disabled={isLoading || analyzing} variant="outline">
             <RefreshCw className={`w-4 h-4 mr-2 ${analyzing ? 'animate-spin' : ''}`} />

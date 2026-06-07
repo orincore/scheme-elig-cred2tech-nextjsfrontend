@@ -13,7 +13,6 @@ import { toast } from 'sonner';
 import {
   LayoutDashboard,
   Briefcase,
-  History,
   Settings,
   LogOut,
   User,
@@ -42,7 +41,6 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/agent/dashboard',            label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/agent/dashboard/cases',      label: 'My Cases',  icon: Briefcase },
-  { href: '/agent/dashboard/history',    label: 'History',   icon: History },
   { href: '/agent/dashboard/calendar',   label: 'Calendar',  icon: CalendarDays },
   { href: '/agent/dashboard/profile',    label: 'Profile',   icon: User },
   { href: '/agent/dashboard/settings',   label: 'Settings',  icon: Settings },

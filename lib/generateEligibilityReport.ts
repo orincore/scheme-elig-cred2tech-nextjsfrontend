@@ -154,14 +154,8 @@ async function loadLogo(): Promise<HTMLImageElement | null> {
   });
 }
 
-/**
- * Generate and download the designed eligibility PDF. Resolves once saved;
- * throws on hard failures so the caller can surface a toast.
- */
-export async function generateEligibilityReport(data: ReportData): Promise<void> {
-  if (typeof window === 'undefined') throw new Error('PDF generation must run in the browser');
-  if (!data.schemes.length) throw new Error('No eligible schemes to include in the report');
-
+// ── Internal builder — returns the completed jsPDF instance ─────────────────
+async function buildPdf(data: ReportData): Promise<any> {
   const { default: jsPDF } = await import('jspdf');
   const logo = await loadLogo();
 
@@ -358,7 +352,32 @@ export async function generateEligibilityReport(data: ReportData): Promise<void>
     pdf.text(`Page ${p} of ${pages}`, PW - M, FOOTER_TOP + 14, { align: 'right' });
   }
 
-  const safe = (data.business.legalName || data.user.name || 'business')
+  return pdf;
+}
+
+function safeName(data: ReportData): string {
+  return (data.business.legalName || data.user.name || 'business')
     .replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'report';
-  pdf.save(`Cred2Tech-Eligibility-${safe}.pdf`);
+}
+
+/**
+ * Generate and download the designed eligibility PDF. Resolves once saved;
+ * throws on hard failures so the caller can surface a toast.
+ */
+export async function generateEligibilityReport(data: ReportData): Promise<void> {
+  if (typeof window === 'undefined') throw new Error('PDF generation must run in the browser');
+  if (!data.schemes.length) throw new Error('No eligible schemes to include in the report');
+  const pdf = await buildPdf(data);
+  pdf.save(`Cred2Tech-Eligibility-${safeName(data)}.pdf`);
+}
+
+/**
+ * Generate the designed eligibility PDF and return its raw bytes.
+ * Use this to attach the PDF to an email or upload it instead of auto-saving.
+ */
+export async function generateEligibilityReportBytes(data: ReportData): Promise<Uint8Array> {
+  if (typeof window === 'undefined') throw new Error('PDF generation must run in the browser');
+  if (!data.schemes.length) throw new Error('No eligible schemes to include in the report');
+  const pdf = await buildPdf(data);
+  return new Uint8Array(pdf.output('arraybuffer') as ArrayBuffer);
 }

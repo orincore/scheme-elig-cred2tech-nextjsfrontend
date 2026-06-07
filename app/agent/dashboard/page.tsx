@@ -33,12 +33,12 @@ function StatusPill({ status }: { status: string }) {
   return <span className={`${PILL} ${cfg.cls}`}>{cfg.label}</span>;
 }
 
-interface CaseStats { total: number; inProgress: number; pendingDocs: number; closed: number; }
+interface CaseStats { total: number; active: number; pendingDocs: number; completed: number; }
 
 export default function AgentDashboardPage() {
   const { agent } = useAgentAuth();
   const { assignedCases, setAssignedCases } = useAgentSocket();
-  const [stats, setStats] = useState<CaseStats>({ total: 0, inProgress: 0, pendingDocs: 0, closed: 0 });
+  const [stats, setStats] = useState<CaseStats>({ total: 0, active: 0, pendingDocs: 0, completed: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -50,9 +50,9 @@ export default function AgentDashboardPage() {
           setAssignedCases(cases);
           setStats({
             total:       cases.length,
-            inProgress:  cases.filter((c: any) => c.status === 'IN_PROGRESS').length,
-            pendingDocs: cases.filter((c: any) => c.status === 'DOCUMENTS_PENDING').length,
-            closed:      cases.filter((c: any) => ['CLOSED', 'APPROVED'].includes(c.status)).length,
+            active:      cases.filter((c: any) => ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'UNDER_REVIEW'].includes(c.status)).length,
+            pendingDocs: cases.filter((c: any) => c.status === 'DOCUMENTS_PENDING' || (c.pendingDocRequests ?? 0) > 0).length,
+            completed:   cases.filter((c: any) => ['APPROVED', 'CLOSED', 'REJECTED'].includes(c.status)).length,
           });
         }
       } catch (err) {
@@ -91,42 +91,15 @@ export default function AgentDashboardPage() {
           Welcome back, {agent?.fullName?.split(' ')[0] || 'Agent'}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">Here's what's happening with your cases today.</p>
-
-        {/* Stats strip */}
-        <div className="flex items-center gap-5 mt-6 flex-wrap">
-          <div>
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Total</p>
-            <p className="text-2xl font-bold text-foreground">{stats.total}</p>
-            <p className="text-xs text-muted-foreground">Assigned cases</p>
-          </div>
-          <div className="w-px h-10 bg-border" />
-          <div>
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">In Progress</p>
-            <p className="text-2xl font-bold text-amber-500">{stats.inProgress}</p>
-            <p className="text-xs text-muted-foreground">Active work</p>
-          </div>
-          <div className="w-px h-10 bg-border" />
-          <div>
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Docs Pending</p>
-            <p className="text-2xl font-bold text-orange-500">{stats.pendingDocs}</p>
-            <p className="text-xs text-muted-foreground">Awaiting upload</p>
-          </div>
-          <div className="w-px h-10 bg-border" />
-          <div>
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Closed</p>
-            <p className="text-2xl font-bold text-green-500">{stats.closed}</p>
-            <p className="text-xs text-muted-foreground">Completed</p>
-          </div>
-        </div>
       </div>
 
       {/* ── Quick-stat cards ────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Total Cases',   value: stats.total,       icon: Briefcase,    color: 'text-blue-500' },
-          { label: 'In Progress',   value: stats.inProgress,  icon: Clock,        color: 'text-amber-500' },
+          { label: 'Active',        value: stats.active,      icon: Clock,        color: 'text-amber-500' },
           { label: 'Pending Docs',  value: stats.pendingDocs, icon: AlertCircle,  color: 'text-orange-500' },
-          { label: 'Completed',     value: stats.closed,      icon: CheckCircle,  color: 'text-green-500' },
+          { label: 'Completed',     value: stats.completed,   icon: CheckCircle,  color: 'text-green-500' },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-card border border-border rounded-none p-5 flex items-center justify-between">
             <div>
