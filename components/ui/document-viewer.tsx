@@ -22,12 +22,19 @@ export function DocumentViewer({ fileUrl, fileName, onClose }: DocumentViewerPro
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  // Strip any query string / hash before reading the extension.
-  const cleanUrl = fileUrl.split(/[?#]/)[0];
-  const fileExtension = cleanUrl.split('.').pop()?.toLowerCase();
+  // Derive the extension from the FILE NAME first — blob:/data: URLs (used for
+  // local previews from the upload dialog) carry no extension, so reading it from
+  // the URL alone made every blob PDF/image look like an "unknown" type and never
+  // render. Fall back to the URL extension for remote files without a name.
+  const extOf = (s?: string) => {
+    const clean = (s || '').split(/[?#]/)[0];
+    const i = clean.lastIndexOf('.');
+    return i >= 0 && i < clean.length - 1 ? clean.slice(i + 1).toLowerCase() : '';
+  };
+  const fileExtension = extOf(fileName) || extOf(fileUrl);
   const isPdf = fileExtension === 'pdf';
-  const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(fileExtension || '');
-  const isDoc = ['doc', 'docx'].includes(fileExtension || '');
+  const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg'].includes(fileExtension);
+  const isDoc = ['doc', 'docx'].includes(fileExtension);
   const isAlreadyLocal = fileUrl.startsWith('blob:') || fileUrl.startsWith('data:');
 
   useEffect(() => {
@@ -63,7 +70,11 @@ export function DocumentViewer({ fileUrl, fileName, onClose }: DocumentViewerPro
         createdObjectUrl = URL.createObjectURL(blob);
         setResolvedUrl(createdObjectUrl);
       } catch {
-        if (!cancelled) setLoadError(true);
+        // The blob fetch was CORS/network blocked. Don't give up — fall back to
+        // embedding the ORIGINAL url directly (iframe <object> / <img> loads are
+        // NOT subject to CORS), so a cross-origin PDF/image hosted with permissive
+        // framing still previews. `embedUrl` below uses fileUrl when no blob.
+        if (!cancelled) setResolvedUrl(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -74,6 +85,18 @@ export function DocumentViewer({ fileUrl, fileName, onClose }: DocumentViewerPro
       if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
     };
   }, [fileUrl, isAlreadyLocal, isPdf, isImage]);
+
+  // A remote file is only safe to embed DIRECTLY (without a blob) when it's
+  // SAME-ORIGIN. A cross-origin direct embed gets blocked by the file server's
+  // X-Frame-Options / CSP frame-ancestors and shows the browser's
+  // "refused to connect" page. So: prefer the fetched blob; else the direct URL
+  // only if same-origin; else null → render a clean Open/Download fallback.
+  const sameOrigin = (() => {
+    if (isAlreadyLocal) return true;
+    try { return new URL(fileUrl, window.location.href).origin === window.location.origin; }
+    catch { return false; }
+  })();
+  const embedUrl = resolvedUrl || (sameOrigin ? fileUrl : null);
 
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 25, 200));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 25, 50));
@@ -156,6 +179,9 @@ export function DocumentViewer({ fileUrl, fileName, onClose }: DocumentViewerPro
             <Button variant="ghost" size="sm" onClick={toggleFullscreen} className="h-8">
               <Maximize2 className="h-4 w-4" />
             </Button>
+            <Button variant="ghost" size="sm" onClick={handleOpenInNewTab} className="h-8" title="Open in new tab">
+              <ExternalLink className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="sm" onClick={handleDownload} className="h-8">
               <Download className="h-4 w-4" />
             </Button>
@@ -177,27 +203,32 @@ export function DocumentViewer({ fileUrl, fileName, onClose }: DocumentViewerPro
           </div>
         )}
 
-        {!loading && loadError &&
+        {/* No safe URL to embed (cross-origin file the blob fetch couldn't get),
+            or an image that failed to load → clean Open/Download fallback. This
+            replaces the browser's "refused to connect" iframe error. */}
+        {!loading && (isPdf || isImage) && (!embedUrl || loadError) &&
           fallbackPanel(
             'Could Not Load Preview',
             'We were unable to load this document for preview. You can open it in a new tab or download it instead.',
           )}
 
-        {!loading && !loadError && isPdf && resolvedUrl && (
+        {/* PDF — native browser PDF viewer via <iframe>. */}
+        {!loading && isPdf && embedUrl && !loadError && (
           <div className="w-full h-full bg-card rounded-lg overflow-hidden shadow-xl">
             <iframe
-              src={`${resolvedUrl}#toolbar=1&navpanes=1&scrollbar=1`}
+              src={`${embedUrl}#toolbar=1&navpanes=1&scrollbar=1`}
               className="w-full h-full"
               title={fileName || 'PDF Document'}
             />
           </div>
         )}
 
-        {!loading && !loadError && isImage && resolvedUrl && (
+        {!loading && isImage && embedUrl && !loadError && (
           <div className="relative max-w-full max-h-full flex items-center justify-center">
             <img
-              src={resolvedUrl}
+              src={embedUrl}
               alt={fileName || 'Document'}
+              onError={() => setLoadError(true)}
               style={{ transform: `scale(${zoom / 100})` }}
               className="max-w-full max-h-[calc(100vh-128px)] object-contain transition-transform duration-200 rounded-lg shadow-xl"
             />

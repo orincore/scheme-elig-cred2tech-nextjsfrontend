@@ -2,8 +2,26 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { getMissingFields } from '@/lib/eligibilityFields';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+
+// Each onboarding step has its own URL so a page refresh resumes exactly where
+// the user left off (no more falling through to the dashboard with free access).
+export const ONBOARDING_ROUTES = {
+  landing: '/',
+  otp: '/onboarding/otp',
+  pan: '/onboarding/pan',
+  profile: '/onboarding/profile',
+  summary: '/onboarding/summary',
+  businesses: '/onboarding/businesses',
+  dashboard: '/dashboard',
+} as const;
+
+// Canonical onboarding stage for a logged-in user, derived from authoritative
+// backend state (verified businesses + saved profile) — never from a stale
+// client flag. This is what makes refresh-resume correct and tamper-proof.
+export type OnboardingStage = 'pan' | 'profile' | 'dashboard';
 
 export interface UserProfile {
   userId: string;
@@ -68,7 +86,7 @@ export interface AuthContextType {
   businesses: BusinessProfile[];
   activeBusinessId: number | null;
   pendingBusinessId: number | null;
-  authStep: 'landing' | 'otp' | 'pan-verification' | 'payment' | 'profile-summary' | 'add-business' | 'authenticated';
+  authStep: 'landing' | 'otp' | 'pan-verification' | 'profile-onboarding' | 'payment' | 'profile-summary' | 'add-business' | 'authenticated';
   isLoading: boolean;
   isInitialized: boolean;
   error: string | null;
@@ -79,6 +97,12 @@ export interface AuthContextType {
   setPanAndProfile: (pan: string, profile: Omit<UserProfile, 'pan' | 'mobile' | 'userId'>, userId: string, businessId?: number | null) => Promise<boolean>;
   completePayment: () => Promise<boolean>;
   continueToDashboard: () => void;
+  /**
+   * Re-derive the user's onboarding stage from the backend (verified businesses +
+   * saved profile). Used by per-page guards so refresh / deep-links resume at the
+   * correct step instead of leaking dashboard access.
+   */
+  resolveStage: () => Promise<OnboardingStage | null>;
   refreshBusinesses: () => Promise<void>;
   setActiveBusiness: (businessId: number) => Promise<boolean>;
   startAddBusiness: () => Promise<boolean>;
@@ -105,32 +129,98 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize from sessionStorage
+  // Map a resolved onboarding stage onto the matching authStep value.
+  const stageToAuthStep = (stage: OnboardingStage): AuthContextType['authStep'] =>
+    stage === 'dashboard' ? 'authenticated' : stage === 'profile' ? 'profile-onboarding' : 'pan-verification';
+
+  /**
+   * Derive the canonical onboarding stage from the backend. The user is only
+   * "authenticated" (dashboard) once they have a PAN-verified business AND a
+   * complete eligibility profile — otherwise they resume at the exact step that
+   * is still pending. Returns null if not logged in.
+   */
+  const resolveStage = async (): Promise<OnboardingStage | null> => {
+    const authToken = token || sessionStorage.getItem('msme_auth_token');
+    const mobileNumber = mobile || sessionStorage.getItem('msme_mobile');
+    if (!authToken || !mobileNumber) return null;
+
+    try {
+      // 1) Businesses → is there a PAN-verified business, and which is active?
+      const bizRes = await fetch(`${API_BASE_URL}/api/msme-auth/businesses`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const bizData = await bizRes.json();
+      const list: BusinessProfile[] = bizData?.businesses || [];
+      const activeId = bizData?.activeBusinessId ?? list.find((b) => b.isPrimary)?.id ?? list[0]?.id ?? null;
+
+      // Keep context + sessionStorage in sync so the dashboard scopes correctly.
+      setBusinesses(list);
+      if (activeId != null) {
+        setActiveBusinessId(Number(activeId));
+        sessionStorage.setItem('msme_active_business', String(activeId));
+      }
+
+      const hasPanVerified = list.some((b) => b.panVerified);
+      if (!hasPanVerified) return 'pan';
+
+      // 2) Profile completeness for the active business (same logic the dashboard uses).
+      const profRes = await fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobileNumber}`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const profData = await profRes.json();
+      const profile = profData?.user || {};
+      const profileComplete = getMissingFields(profile).length === 0;
+      if (!profileComplete) return 'profile';
+
+      return 'dashboard';
+    } catch {
+      // On a transient error, don't grant dashboard access — keep them at PAN.
+      return 'pan';
+    }
+  };
+
+  // Initialize from sessionStorage, then confirm the real stage with the backend
+  // so a refresh mid-onboarding resumes correctly instead of unlocking the dashboard.
   useEffect(() => {
     const savedToken = sessionStorage.getItem('msme_auth_token');
     const savedProfile = sessionStorage.getItem('msme_profile');
     const savedMobile = sessionStorage.getItem('msme_mobile');
     const savedUserId = sessionStorage.getItem('msme_user_id');
 
-    if (savedToken && savedMobile) {
-      setToken(savedToken);
-      setUserId(savedUserId);
-      setMobileState(savedMobile);
-      setAuthStep('authenticated');
+    if (!savedToken || !savedMobile) {
+      // Not logged in yet — but if an OTP was just sent, restore that pending
+      // mobile so a refresh on the OTP page resumes instead of dropping to landing.
+      const pendingMobile = sessionStorage.getItem('msme_pending_mobile');
+      if (pendingMobile) {
+        setMobileState(pendingMobile);
+        setAuthStep('otp');
+      }
+      setIsInitialized(true);
+      return;
+    }
 
-      const savedActiveBiz = sessionStorage.getItem('msme_active_business');
-      if (savedActiveBiz) setActiveBusinessId(Number(savedActiveBiz));
+    setToken(savedToken);
+    setUserId(savedUserId);
+    setMobileState(savedMobile);
 
-      // Only set profile if it exists in sessionStorage
-      if (savedProfile) {
-        try {
-          setUserProfile(JSON.parse(savedProfile));
-        } catch (e) {
-          console.error('Failed to parse saved profile:', e);
-        }
+    const savedActiveBiz = sessionStorage.getItem('msme_active_business');
+    if (savedActiveBiz) setActiveBusinessId(Number(savedActiveBiz));
+
+    if (savedProfile) {
+      try {
+        setUserProfile(JSON.parse(savedProfile));
+      } catch (e) {
+        console.error('Failed to parse saved profile:', e);
       }
     }
-    setIsInitialized(true);
+
+    // Authoritatively resolve where this user actually is in onboarding.
+    (async () => {
+      const stage = await resolveStage();
+      setAuthStep(stage ? stageToAuthStep(stage) : 'landing');
+      setIsInitialized(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sendOtp = async (mobileNumber: string): Promise<boolean> => {
@@ -150,7 +240,10 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       setMobileState(mobileNumber);
+      // Persist the in-progress mobile so the OTP page survives a refresh.
+      sessionStorage.setItem('msme_pending_mobile', mobileNumber);
       setAuthStep('otp');
+      router.push(ONBOARDING_ROUTES.otp);
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to send OTP';
@@ -163,8 +256,10 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
 
   const setMobile = (mobileNumber: string) => {
     setMobileState(mobileNumber);
+    sessionStorage.setItem('msme_pending_mobile', mobileNumber);
     setAuthStep('otp');
     setError(null);
+    router.push(ONBOARDING_ROUTES.otp);
   };
 
   const verifyOtp = async (otp: string): Promise<boolean> => {
@@ -189,18 +284,18 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       sessionStorage.setItem('msme_auth_token', data.token);
       sessionStorage.setItem('msme_mobile', mobile || '');
       sessionStorage.setItem('msme_user_id', data.userId);
+      // OTP is verified — the pending-mobile hint is no longer needed.
+      sessionStorage.removeItem('msme_pending_mobile');
 
-      // Use backend's authStep to determine next step
-      const backendAuthStep = data.authStep;
-      if (backendAuthStep === 'dashboard') {
-        // Existing paid user — fetch their profile and show summary
+      // EXISTING (already-paid) users keep their flow intact: review their
+      // profile summary, optionally pay to refresh, then continue to dashboard.
+      if (data.authStep === 'dashboard') {
         try {
           const profileRes = await fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobile}`, {
             headers: { 'Authorization': `Bearer ${data.token}` },
           });
           const profileData = await profileRes.json();
 
-          // Fetch refresh pricing
           const paymentStatusRes = await fetch(`${API_BASE_URL}/api/payment/status/${data.userId}`, {
             headers: { 'Authorization': `Bearer ${data.token}` },
           });
@@ -216,12 +311,21 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
           console.error('Failed to load existing profile:', e);
         }
         setAuthStep('profile-summary');
-      } else if (backendAuthStep === 'payment') {
-        setAuthStep('payment');
-      } else {
-        setAuthStep('pan-verification');
+        router.push(ONBOARDING_ROUTES.summary);
+        return true;
       }
 
+      // NEW users (and anyone mid-onboarding): resume at the exact pending step.
+      const stage = await resolveStage();
+      const resolved = stage ?? 'pan';
+      setAuthStep(stageToAuthStep(resolved));
+      router.push(
+        resolved === 'dashboard'
+          ? ONBOARDING_ROUTES.dashboard
+          : resolved === 'profile'
+            ? ONBOARDING_ROUTES.profile
+            : ONBOARDING_ROUTES.pan,
+      );
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'OTP verification failed';
@@ -274,7 +378,23 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       setUserProfile(fullProfile);
       sessionStorage.setItem('msme_profile', JSON.stringify(fullProfile));
 
-      setAuthStep('payment');
+      // NEW FLOW: no payment here. PAN is verified → make the just-verified
+      // business the active one (so the dashboard + analysis scope to it, even
+      // when adding additional businesses), then send the user to complete their
+      // profile onboarding. Payment now happens on the dashboard (pay to unlock).
+      if (businessId) {
+        await setActiveBusiness(Number(businessId));
+      }
+      await refreshBusinesses();
+      const stage = await resolveStage();
+      if (stage === 'dashboard') {
+        // Profile already complete (e.g. auto-filled from GST) — go straight in.
+        setAuthStep('authenticated');
+        router.push(ONBOARDING_ROUTES.dashboard);
+      } else {
+        setAuthStep('profile-onboarding');
+        router.push(ONBOARDING_ROUTES.profile);
+      }
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save profile';
@@ -454,13 +574,15 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     if (!authToken) return false;
     setPendingBusinessId(null);  // no pre-created row
     setAuthStep('pan-verification');
-    router.push('/');
+    // `add=1` tells the PAN page this is an additional business, so its guard
+    // allows it even though the user's primary stage is already 'dashboard'.
+    router.push(`${ONBOARDING_ROUTES.pan}?add=1`);
     return true;
   };
 
   const goToAddBusinessHub = () => {
     setAuthStep('add-business');
-    router.push('/');
+    router.push(ONBOARDING_ROUTES.businesses);
   };
 
   const initiateDataRefresh = async (): Promise<{ orderId: string; amount: number; currency: string; keyId: string } | null> => {
@@ -545,6 +667,7 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     sessionStorage.removeItem('msme_mobile');
     sessionStorage.removeItem('msme_user_id');
     sessionStorage.removeItem('msme_active_business');
+    sessionStorage.removeItem('msme_pending_mobile');
     setExistingProfile(null);
     setBusinesses([]);
     setActiveBusinessId(null);
@@ -571,6 +694,7 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     setPanAndProfile,
     completePayment,
     continueToDashboard,
+    resolveStage,
     refreshBusinesses,
     setActiveBusiness,
     startAddBusiness,

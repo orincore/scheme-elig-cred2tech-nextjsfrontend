@@ -11,12 +11,15 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { payForService } from '@/lib/razorpayCheckout';
+import { toast } from 'sonner';
 import SchemeDecisionCard from './SchemeDecisionCard';
 import QuestionsModal from './QuestionsModal';
+import { generateEligibilityReport, ReportScheme } from '@/lib/generateEligibilityReport';
 import {
   RefreshCw, CheckCircle2, HelpCircle, XCircle, Search, Loader2, Target, AlertTriangle,
   LayoutGrid, Landmark, Sprout, TrendingUp, BadgePercent, Award, ReceiptText,
-  GraduationCap, Megaphone, Cpu, Layers, PartyPopper, type LucideIcon,
+  GraduationCap, Megaphone, Cpu, Layers, PartyPopper, FileDown, type LucideIcon,
 } from 'lucide-react';
 import { Typewriter } from '@/components/ui/typewriter';
 
@@ -84,11 +87,123 @@ export default function EligibilityDashboard() {
     eligibleItems, needsInfoItems, ineligibleItems, actionableItems, isLoading, refreshSchemes,
   } = useSchemes();
 
-  const { token, userProfile, mobile } = useMsmeAuth();
+  const { token, userId, userProfile, mobile, activeBusinessId, businesses } = useMsmeAuth();
   const [ownedDocs, setOwnedDocs] = useState<OwnedDocs>(() => getOwnedDocs(null));
+  const [downloadingReport, setDownloadingReport] = useState(false);
 
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('eligible');
+
+  // ── Paid "Re-run analysis" ────────────────────────────────────────────────
+  // Re-running is a paid action (in BOTH sandbox and live modes): confirm the
+  // price, take payment, and only then trigger the re-analysis.
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+  const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
+  const [reanalyzePrice, setReanalyzePrice] = useState<number | null>(null);
+  const [reanalyzePaying, setReanalyzePaying] = useState(false);
+
+  // Fetch the (admin-tunable) re-run price up front so the dialog can show it.
+  useEffect(() => {
+    const uid = userId || (typeof window !== 'undefined' ? sessionStorage.getItem('msme_user_id') : null);
+    const authToken = token || (typeof window !== 'undefined' ? sessionStorage.getItem('msme_auth_token') : null);
+    if (!uid || !authToken) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/payment/status/${uid}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        const data = await res.json();
+        if (data?.reanalysisPrice != null) setReanalyzePrice(Number(data.reanalysisPrice));
+      } catch {
+        /* dialog will still work; price just shows generically */
+      }
+    })();
+  }, [userId, token]);
+
+  const handleConfirmReanalyze = async () => {
+    const authToken = token || sessionStorage.getItem('msme_auth_token') || '';
+    const uid = userId || sessionStorage.getItem('msme_user_id') || '';
+    const bizId = activeBusinessId ?? sessionStorage.getItem('msme_active_business') ?? undefined;
+
+    // Close our modal BEFORE opening Razorpay. The Razorpay checkout must not be
+    // launched from underneath an open overlay/focus-trap or it becomes
+    // non-interactive — so we tear ours down first, then open the payment popup.
+    setReanalyzePaying(true);
+    setReanalyzeOpen(false);
+    await new Promise((r) => setTimeout(r, 120));
+
+    const result = await payForService({
+      token: authToken,
+      userId: uid,
+      mobile: mobile || sessionStorage.getItem('msme_mobile') || undefined,
+      paymentType: 'REANALYSIS',
+      businessId: bizId,
+      description: 'Re-run scheme analysis',
+      prefillName: userProfile?.name,
+      prefillEmail: userProfile?.email,
+    });
+    setReanalyzePaying(false);
+    if (result.success) {
+      toast.success('Payment successful — re-running analysis…');
+      refreshSchemes();
+    } else if (!result.cancelled) {
+      toast.error(result.error || 'Payment failed. Please try again.');
+    }
+  };
+
+  // ── Download eligible-schemes PDF report ──────────────────────────────────
+  const handleDownloadReport = async () => {
+    if (eligibleItems.length === 0) { toast.error('No eligible schemes to include yet'); return; }
+    setDownloadingReport(true);
+    try {
+      const authToken = token || sessionStorage.getItem('msme_auth_token') || '';
+      const mobileNumber = userProfile?.mobile || mobile || sessionStorage.getItem('msme_mobile') || '';
+      const biz = businesses.find((b) => b.id === activeBusinessId) || businesses[0];
+
+      // Only NON-sensitive descriptive fields go into the report (no PAN / GSTIN
+      // / phone / email). Pull sector/state/type from the merged-business profile.
+      let sector: string | null = null, state: string | null = null;
+      let type: string | null = null, enterpriseCategory: string | null = null;
+      let legalName = biz?.legalNameOfBusiness || null;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobileNumber}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        const d = await res.json();
+        if (d?.success && d.user) {
+          sector = d.user.businessSector ?? null;
+          state = d.user.state ?? null;
+          type = d.user.businessType ?? null;
+          enterpriseCategory = d.user.enterpriseCategory ?? null;
+          legalName = legalName || d.user.legalNameOfBusiness || d.user.name || null;
+        }
+      } catch { /* report still works with what we have */ }
+
+      const schemes: ReportScheme[] = eligibleItems.map(({ scheme, decision }) => ({
+        name: scheme.schemeName || scheme.schemeShortTitle || 'Scheme',
+        ministry: scheme.nodalMinistryName || null,
+        level: scheme.level || scheme.schemeLevel || null,
+        category: (scheme.schemeCategory || [])[0] || null,
+        confidence: decision.confidence || null,
+        briefDescription: scheme.briefDescription || null,
+        whyEligible: (decision.verified_criteria?.length ? decision.verified_criteria : decision.reasons) || [],
+        benefits: scheme.benefits || null,
+        notes: decision.important_notes || null,
+      }));
+
+      await generateEligibilityReport({
+        user: { name: userProfile?.name || null },
+        business: { legalName, sector, state, type, enterpriseCategory },
+        schemes,
+      });
+      toast.success('Report downloaded');
+    } catch (err: any) {
+      console.error('[Report] generation failed:', err);
+      toast.error(err?.message || 'Could not generate the report. Please try again.');
+    } finally {
+      setDownloadingReport(false);
+    }
+  };
 
   // Fetch the user's profile once to know which required documents they already hold.
   useEffect(() => {
@@ -156,11 +271,81 @@ export default function EligibilityDashboard() {
             AI-matched government schemes for your business{updatedLabel ? ` · updated ${updatedLabel}` : ''}
           </p>
         </div>
-        <Button onClick={refreshSchemes} disabled={isLoading || analyzing} variant="outline">
-          <RefreshCw className={`w-4 h-4 mr-2 ${analyzing ? 'animate-spin' : ''}`} />
-          {analyzing ? 'Analyzing…' : 'Re-run analysis'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {eligibleItems.length > 0 && (
+            <Button onClick={handleDownloadReport} disabled={downloadingReport || analyzing} variant="outline">
+              {downloadingReport
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Preparing…</>
+                : <><FileDown className="w-4 h-4 mr-2" /> Download report</>}
+            </Button>
+          )}
+          <Button onClick={() => setReanalyzeOpen(true)} disabled={isLoading || analyzing} variant="outline">
+            <RefreshCw className={`w-4 h-4 mr-2 ${analyzing ? 'animate-spin' : ''}`} />
+            {analyzing ? 'Analyzing…' : 'Re-run analysis'}
+          </Button>
+        </div>
       </div>
+
+      {/* Paid re-run confirmation — matches the scheme-application "Upload
+          Documents" dialog (sharp rounded-lg edges, bg-background, border-b/border-t
+          sections). Kept as a plain overlay (NOT Radix) so the Razorpay popup
+          launched afterwards stays fully interactive. */}
+      {reanalyzeOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => { if (!reanalyzePaying) setReanalyzeOpen(false); }}
+        >
+          <div
+            className="w-full max-w-md bg-background border border-border rounded-lg shadow-lg overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                <RefreshCw className="h-5 w-5" />
+                Re-run Scheme Analysis
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                This re-evaluates every government scheme against your latest profile.
+                It’s a paid action and you’ll be charged before the analysis starts.
+              </p>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5">
+              <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-4 py-3">
+                <span className="text-sm font-medium text-foreground">Re-Run Analysis</span>
+                <span className="text-lg font-bold text-foreground">
+                  {reanalyzePrice != null ? `₹${reanalyzePrice}` : '—'}
+                </span>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-border shrink-0 flex flex-row gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setReanalyzeOpen(false)}
+                disabled={reanalyzePaying}
+                className="flex-1 sm:flex-initial"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmReanalyze}
+                disabled={reanalyzePaying}
+                className="gap-2 flex-1 sm:flex-initial"
+              >
+                {reanalyzePaying ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Opening…</>
+                ) : (
+                  <>{reanalyzePrice != null ? `Pay ₹${reanalyzePrice} & Re-run` : 'Pay & Re-run'}</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Celebratory congratulations message */}
       {showCongrats && (
@@ -317,7 +502,7 @@ export default function EligibilityDashboard() {
             {fNeeds.length === 0 && (
               <EmptyState icon={analyzing ? Loader2 : HelpCircle} spinning={analyzing}
                 title={analyzing ? 'Still analyzing…' : 'Nothing needs your input'}
-                sub="Schemes that need one more detail from you will appear here with a quick question." />
+                sub="Schemes that need a quick answer appear here. Answer one and if you qualify it moves to the Eligible tab; otherwise it stays here so you can modify the answer and re-check." />
             )}
           </div>
         </TabsContent>

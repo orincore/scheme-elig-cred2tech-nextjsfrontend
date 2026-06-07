@@ -117,12 +117,12 @@ export default function AgentSettingsPage() {
         </div>
       </div>
 
-      {/* Danger zone */}
+      {/* Session Management */}
       <div className="bg-card border border-destructive/40 rounded-none overflow-hidden">
         <div className="px-5 py-3.5 border-b border-destructive/30 bg-destructive/5">
           <div className="flex items-center gap-2">
             <LogOut className="h-4 w-4 text-destructive" />
-            <h3 className="text-[13px] font-bold text-destructive">Danger Zone</h3>
+            <h3 className="text-[13px] font-bold text-destructive">Session Management</h3>
           </div>
         </div>
         <div className="px-5 py-4 flex items-center justify-between">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -192,6 +192,21 @@ export function DocumentUploadDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<DocumentFile | null>(null);
   const extraInputRef = useRef<HTMLInputElement>(null);
+
+  // The scheme's required documents are fetched ASYNC by the parent, so they're
+  // usually empty when this dialog first mounts. Re-sync the per-document slots
+  // whenever the dialog opens OR the required-docs list changes — otherwise the
+  // dialog keeps the stale (empty) slots and shows only "Additional documents".
+  // Existing uploads are preserved by matching on label.
+  useEffect(() => {
+    if (!open) return;
+    setSlots((prev) =>
+      requiredDocuments.map((label) => {
+        const existing = prev.find((s) => s.label === label && s.file);
+        return existing ? existing : { label, file: null };
+      })
+    );
+  }, [open, requiredDocuments]);
 
   // Re-initialise slots when requiredDocuments changes (e.g. dialog is re-opened)
   const resetState = () => {

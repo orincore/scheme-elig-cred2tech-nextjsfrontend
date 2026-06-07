@@ -1,50 +1,66 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
+import { useEffect, useState } from 'react';
+import { useMsmeAuth, ONBOARDING_ROUTES } from '@/contexts/MsmeAuthContext';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { useAgentAuth } from '@/contexts/AgentAuthContext';
 import { useRouter } from 'next/navigation';
 import LoginPage from '@/components/auth/LoginPage';
-import OtpPage from '@/components/auth/OtpPage';
-import PanVerificationPage from '@/components/auth/PanVerificationPage';
-import PaymentPage from '@/components/auth/PaymentPage';
-import ProfileSummaryPage from '@/components/auth/ProfileSummaryPage';
-import AddBusinessPage from '@/components/auth/AddBusinessPage';
 
 export default function Home() {
-  const { authStep } = useMsmeAuth();
+  const { isInitialized, authStep, resolveStage } = useMsmeAuth();
   const { isAuthenticated: isAdminAuthenticated } = useAdminAuth();
   const { isAuthenticated: isAgentAuthenticated } = useAgentAuth();
   const router = useRouter();
+  const [showLogin, setShowLogin] = useState(false);
 
   useEffect(() => {
-    // Redirect admin to admin dashboard
+    // Admin / agent take priority over the MSME flow.
     if (isAdminAuthenticated) {
-      router.push('/admin/dashboard');
+      router.replace('/admin/dashboard');
       return;
     }
-    
-    // Redirect agent to agent dashboard
     if (isAgentAuthenticated) {
-      router.push('/agent/dashboard');
+      router.replace('/agent/dashboard');
       return;
     }
-    
-    // Redirect MSME user to dashboard
-    if (authStep === 'authenticated') {
-      router.push('/dashboard');
+
+    if (!isInitialized) return;
+    let cancelled = false;
+
+    const authToken = typeof window !== 'undefined' ? sessionStorage.getItem('msme_auth_token') : null;
+
+    // OTP in progress (no token yet) → resume the OTP step.
+    if (!authToken) {
+      if (authStep === 'otp') {
+        router.replace(ONBOARDING_ROUTES.otp);
+        return;
+      }
+      setShowLogin(true);
+      return;
     }
-  }, [authStep, isAdminAuthenticated, isAgentAuthenticated, router]);
+
+    // Logged in / mid-onboarding → jump to the user's real stage.
+    (async () => {
+      const stage = await resolveStage();
+      if (cancelled) return;
+      router.replace(
+        stage === 'dashboard' ? ONBOARDING_ROUTES.dashboard
+          : stage === 'profile' ? ONBOARDING_ROUTES.profile
+          : stage === 'pan' ? ONBOARDING_ROUTES.pan
+          : ONBOARDING_ROUTES.landing,
+      );
+      if (!stage) setShowLogin(true);
+    })();
+
+    return () => { cancelled = true; };
+  }, [isInitialized, authStep, isAdminAuthenticated, isAgentAuthenticated, router]);
+
+  if (!showLogin) return <main className="min-h-screen bg-background" />;
 
   return (
     <main className="min-h-screen bg-background">
-      {authStep === 'landing' && <LoginPage />}
-      {authStep === 'otp' && <OtpPage />}
-      {authStep === 'pan-verification' && <PanVerificationPage />}
-      {authStep === 'payment' && <PaymentPage />}
-      {authStep === 'profile-summary' && <ProfileSummaryPage />}
-      {authStep === 'add-business' && <AddBusinessPage />}
+      <LoginPage />
     </main>
   );
 }

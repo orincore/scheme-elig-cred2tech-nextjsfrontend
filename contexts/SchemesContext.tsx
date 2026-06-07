@@ -1,6 +1,12 @@
 'use client';
 
 import React, { createContext, useContext, useState, useRef, ReactNode, useEffect } from 'react';
+import {
+  MissingField,
+  REQUIRED_SEARCH_FIELDS,
+  getMissingFields,
+  buildEligibilityDbPayload,
+} from '@/lib/eligibilityFields';
 
 // NestJS backend: auth, profile, bookmarks, eligibility proxy + snapshot store.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
@@ -28,12 +34,9 @@ export interface Scheme {
   matchReason?: string;
 }
 
-export type MissingField = {
-  key: string;
-  label: string;
-  type: 'text' | 'select' | 'number' | 'boolean';
-  options?: { value: string; label: string }[];
-};
+// Re-exported from the shared lib so existing consumers
+// (e.g. MissingProfileModal) keep importing it from this context.
+export type { MissingField };
 
 export interface EligibilityQuestion {
   field_id: string;
@@ -65,6 +68,10 @@ export interface SchemeDecision {
   difficulty?: 'easy' | 'moderate' | string;
   cached?: boolean;
   reverified?: boolean;
+  // The user's clarification answer (so the Needs-info card can show & let them
+  // edit it even after the verdict changed). Preserved across re-verifies.
+  answeredValue?: string;
+  answeredFieldId?: string;
 }
 
 // One scheme's full analysis result — the complete card data.
@@ -100,6 +107,13 @@ export interface SchemesContextType {
   itemsPerPage: number;
   missingFields: MissingField[];
   showMissingFieldsModal: boolean;
+  // Industry/sector is MANDATORY before the AI runs — an unclear value (PAN API
+  // couldn't determine it) makes the engine return generic, irrelevant schemes.
+  // When true, a dedicated "confirm your industry" popup blocks analysis until
+  // the user picks one and it's saved to the active business.
+  needsIndustry: boolean;
+  industryOptions: { value: string; label: string }[];
+  submitIndustry: (sector: string) => Promise<void>;
 
   // ── AI engine eligibility (live, full detail) ─────────────────────────────
   analysisStatus: AnalysisStatus;
@@ -134,254 +148,12 @@ export interface SchemesContextType {
   fetchSchemeBySlug: (slug: string) => Promise<Scheme | null>;
   refreshSchemes: () => Promise<void>;
   submitQuestionAnswers: (answers: Record<string, string>) => Promise<void>;
-}
-
-const REQUIRED_SEARCH_FIELDS: MissingField[] = [
-  {
-    key: 'sector',
-    label: 'Business Sector / Industry',
-    type: 'select',
-    options: [
-      { value: 'finance',       label: 'Finance, Banking, Fintech & Professional Services' },
-      { value: 'technology',    label: 'IT / Software / Technology / ITES' },
-      { value: 'manufacturing', label: 'Manufacturing' },
-      { value: 'retail',        label: 'Retail / Trading / Wholesale' },
-      { value: 'services',      label: 'Other Services (Consulting, Admin, etc.)' },
-      { value: 'healthcare',    label: 'Healthcare & Pharma' },
-      { value: 'education',     label: 'Education & Training' },
-      { value: 'construction',  label: 'Construction & Real Estate' },
-      { value: 'transport',     label: 'Transportation & Logistics' },
-      { value: 'agro',          label: 'Agriculture, Food Processing & Dairy' },
-      { value: 'textile',       label: 'Textile & Apparel' },
-      { value: 'handicraft',    label: 'Handicraft & Artisan' },
-      { value: 'fisheries',     label: 'Fisheries & Aquaculture' },
-      { value: 'ecommerce',     label: 'E-Commerce' },
-      { value: 'energy',        label: 'Energy & Renewables' },
-      { value: 'hospitality',   label: 'Hospitality & Tourism' },
-      { value: 'media',         label: 'Media & Entertainment' },
-    ],
-  },
-  {
-    key: 'msme_size',
-    label: 'MSME Size',
-    type: 'select',
-    options: [
-      { value: 'micro',  label: 'Micro' },
-      { value: 'small',  label: 'Small' },
-      { value: 'medium', label: 'Medium' },
-    ],
-  },
-  {
-    key: 'annual_turnover',
-    label: 'Annual Turnover Range',
-    type: 'select',
-    options: [
-      { value: 'under5L',    label: 'Under ₹5 Lakh' },
-      { value: '5L_40L',     label: '₹5L – ₹40L' },
-      { value: '40L_1Cr',    label: '₹40L – ₹1 Cr' },
-      { value: '1Cr_10Cr',   label: '₹1 Cr – ₹10 Cr' },
-      { value: '10Cr_250Cr', label: '₹10 Cr – ₹250 Cr' },
-      { value: 'above250Cr', label: 'Above ₹250 Cr' },
-    ],
-  },
-  {
-    key: 'total_employees',
-    label: 'Total Employees',
-    type: 'select',
-    options: [
-      { value: '1_5',     label: '1–5' },
-      { value: '6_25',    label: '6–25' },
-      { value: '26_100',  label: '26–100' },
-      { value: '101_500', label: '101–500' },
-      { value: '501_plus', label: '501+' },
-    ],
-  },
-  {
-    key: 'business_type',
-    label: 'Business Type',
-    type: 'select',
-    options: [
-      { value: 'startup',       label: 'Startup' },
-      { value: 'proprietorship', label: 'Proprietorship / Sole Trader' },
-      { value: 'partnership',   label: 'Partnership' },
-      { value: 'pvt_ltd',       label: 'Private Limited (Pvt Ltd / LLP)' },
-      { value: 'cooperative',   label: 'Cooperative' },
-      { value: 'women_owned',   label: 'Women-Owned Business' },
-      { value: 'sc_st_owned',   label: 'SC/ST-Owned Business' },
-      { value: 'ngo',           label: 'NGO / Social Enterprise' },
-    ],
-  },
-  {
-    key: 'business_stage',
-    label: 'Business Stage',
-    type: 'select',
-    options: [
-      { value: 'idea',   label: 'Idea Stage' },
-      { value: 'early',  label: 'Early Stage (< 2 years)' },
-      { value: 'growth', label: 'Growth Stage (2–5 years)' },
-      { value: 'mature', label: 'Mature / Established (5+ years)' },
-    ],
-  },
-  {
-    key: 'is_startup',
-    label: 'Is your business a Startup?',
-    type: 'select',
-    options: [
-      { value: 'true',  label: 'Yes' },
-      { value: 'false', label: 'No' },
-    ],
-  },
-  {
-    key: 'udyam_registered',
-    label: 'Is your business Udyam (MSME) registered?',
-    type: 'select',
-    options: [
-      { value: 'true',  label: 'Yes' },
-      { value: 'false', label: 'No' },
-    ],
-  },
-  {
-    key: 'benefit_focus',
-    label: 'Primary Benefit Focus',
-    type: 'select',
-    options: [
-      { value: 'any',            label: 'Any / All Benefits' },
-      { value: 'loan',           label: 'Loan / Credit / Finance' },
-      { value: 'subsidy',        label: 'Subsidy / Grant / Financial Assistance' },
-      { value: 'training',       label: 'Training / Skill Development' },
-      { value: 'technology',     label: 'Technology Upgradation / Digital' },
-      { value: 'marketing',      label: 'Marketing / Export Promotion' },
-      { value: 'insurance',      label: 'Insurance / Protection' },
-      { value: 'infrastructure', label: 'Infrastructure / Industrial Park' },
-      { value: 'tax',            label: 'Tax Exemption / Concession' },
-    ],
-  },
-  {
-    key: 'state',
-    label: 'State',
-    type: 'text',
-  },
-  {
-    key: 'gender',
-    label: 'Proprietor / Director Gender',
-    type: 'select',
-    options: [
-      { value: 'Male',        label: 'Male' },
-      { value: 'Female',      label: 'Female' },
-      { value: 'Transgender', label: 'Transgender' },
-    ],
-  },
-  {
-    key: 'caste',
-    label: 'Social Category',
-    type: 'select',
-    options: [
-      { value: 'General',  label: 'General (No reservation category)' },
-      { value: 'OBC',      label: 'OBC (Other Backward Class)' },
-      { value: 'SC',       label: 'SC (Scheduled Caste)' },
-      { value: 'ST',       label: 'ST (Scheduled Tribe)' },
-      { value: 'Minority', label: 'Minority' },
-    ],
-  },
-  {
-    key: 'age',
-    label: 'Age of Proprietor / Director',
-    type: 'number',
-  },
-  {
-    key: 'differently_abled',
-    label: 'Are you differently abled?',
-    type: 'select',
-    options: [
-      { value: 'false', label: 'No' },
-      { value: 'true',  label: 'Yes' },
-    ],
-  },
-  {
-    key: 'bpl',
-    label: 'Do you hold a BPL (Below Poverty Line) card?',
-    type: 'select',
-    options: [
-      { value: 'false', label: 'No' },
-      { value: 'true',  label: 'Yes' },
-    ],
-  },
-  {
-    key: 'minority',
-    label: 'Do you belong to a minority community?',
-    type: 'select',
-    options: [
-      { value: 'false', label: 'No' },
-      { value: 'true',  label: 'Yes' },
-    ],
-  },
-];
-
-const SECTOR_NORMALISE_MAP: Record<string, string> = {
-  manufacturing: 'manufacturing', agro: 'agro', textile: 'textile', handicraft: 'handicraft',
-  fisheries: 'fisheries', technology: 'technology', construction: 'construction', retail: 'retail',
-  services: 'services', finance: 'finance', education: 'education', healthcare: 'healthcare',
-  transport: 'transport', ecommerce: 'ecommerce', energy: 'energy', hospitality: 'hospitality',
-  media: 'media',
-  it_software: 'technology', ites_bpo: 'technology', telecom: 'technology', fintech: 'finance',
-  banking: 'finance', nbfc: 'finance', professional_services: 'finance', wholesale: 'retail',
-  transportation: 'transport', food_processing: 'agro', agriculture: 'agro',
-  media_entertainment: 'media', arts_entertainment: 'media', real_estate: 'construction',
-  other: 'other',
-};
-
-const PROFILE_SOURCE_MAP: Record<string, (p: Record<string, any>) => any> = {
-  sector:            (p) => p.sector || p.businessSector || p.business_sector,
-  msme_size:         (p) => p.enterpriseCategory || p.enterprise_category || p.msme_size,
-  annual_turnover:   (p) => p.annualTurnoverLakhs || p.annual_turnover_lakhs || p.annual_turnover,
-  total_employees:   (p) => p.total_employees || p.totalEmployees,
-  business_type:     (p) => p.businessType || p.business_type || p.entityType || p.entity_type,
-  business_stage:    (p) => p.businessStage || p.business_stage,
-  is_startup:        (p) => {
-    const v = p.isStartup ?? p.is_startup;
-    return (v !== undefined && v !== null) ? String(v) : undefined;
-  },
-  udyam_registered:  (p) => {
-    const v = p.udyamRegistered ?? p.udyam_registered;
-    return (v !== undefined && v !== null) ? String(v) : undefined;
-  },
-  benefit_focus:     (p) => p.benefitFocus || p.benefit_focus,
-  state:             (p) => p.state || p.principalState,
-  gender:            (p) => p.gender,
-  caste:             (p) => p.caste || (Array.isArray(p.socialCategory) ? p.socialCategory[0] : p.socialCategory),
-  age:               (p) => p.age,
-  differently_abled: (p) => (p.differently_abled !== undefined && p.differently_abled !== null) ? String(p.differently_abled) : undefined,
-  bpl:               (p) => (p.bpl !== undefined && p.bpl !== null) ? String(p.bpl) : undefined,
-  minority:          (p) => (p.minority !== undefined && p.minority !== null) ? String(p.minority) : undefined,
-};
-
-const DB_SAVE_KEY_MAP: Record<string, string> = {
-  sector: 'businessSector', msme_size: 'enterpriseCategory', annual_turnover: 'annualTurnoverLakhs',
-  total_employees: 'total_employees', business_type: 'businessType', business_stage: 'businessStage',
-  benefit_focus: 'benefitFocus', state: 'state', gender: 'gender', caste: 'caste', age: 'age',
-  differently_abled: 'differently_abled', bpl: 'bpl', minority: 'minority',
-  udyam_registered: 'udyamRegistered', is_startup: 'isStartup',
-};
-
-function getMissingFields(rawProfile: Record<string, any>): MissingField[] {
-  return REQUIRED_SEARCH_FIELDS.filter((f) => {
-    const getter = PROFILE_SOURCE_MAP[f.key];
-    if (!getter) return false;
-    const val = getter(rawProfile);
-    if (val === undefined || val === null || val === '') return true;
-    if (f.key === 'annual_turnover' && !isNaN(parseFloat(val)) && parseFloat(val) === 0) return true;
-    if (f.key === 'total_employees' && !isNaN(parseInt(val)) && parseInt(val) === 0) return true;
-    if (f.key === 'benefit_focus' && val === 'any') return false;
-    if (f.key === 'sector') {
-      const mapped = SECTOR_NORMALISE_MAP[val];
-      const VALID = ['manufacturing','agro','textile','handicraft','fisheries','technology','construction',
-        'retail','services','finance','education','healthcare','transport','ecommerce','energy','hospitality','media'];
-      return !mapped || !VALID.includes(mapped);
-    }
-    if (f.key === 'business_type' && val === 'other') return true;
-    if (['differently_abled', 'bpl', 'minority'].includes(f.key)) return false;
-    return false;
-  });
+  /**
+   * Submit (or modify) the clarification answer for ONE scheme and re-verify it.
+   * Used by the Needs-info card so a user can fix a wrong answer and instantly
+   * see whether they're now eligible. Resolves with the new verdict.
+   */
+  submitSingleAnswer: (slug: string, fieldId: string, answer: string) => Promise<{ ok: boolean; verdict?: string }>;
 }
 
 // ─── Mapping helpers ──────────────────────────────────────────────────────────
@@ -461,7 +233,18 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [missingFields, setMissingFields] = useState<MissingField[]>([]);
   const [showMissingFieldsModal, setShowMissingFieldsModal] = useState(false);
+  const [needsIndustry, setNeedsIndustry] = useState(false);
   const [pendingRawProfile, setPendingRawProfile] = useState<Record<string, any> | null>(null);
+
+  // The industry/sector options, lifted from the shared field definitions so the
+  // dedicated industry popup and the full profile form always offer the same set.
+  const industryOptions = (REQUIRED_SEARCH_FIELDS.find((f) => f.key === 'sector')?.options) || [];
+
+  // True when the active business's sector is unclear (absent / 'other' / not a
+  // known industry). Reuses getMissingFields so there's ONE definition of "valid
+  // sector" shared with the profile form and the engine's own gate.
+  const isSectorUnclear = (profile: Record<string, any>): boolean =>
+    getMissingFields(profile).some((f) => f.key === 'sector');
 
   // ── AI engine eligibility state ──────────────────────────────────────────
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle');
@@ -534,6 +317,23 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
     setQuestions(qs);
   };
 
+  // True if this item belongs in the Needs-info (questionnaire) view: it either
+  // still needs an answer (unanswered clarification) OR has been answered but is
+  // NOT yet eligible — kept here so the answer stays modifiable. Once an answer
+  // makes a scheme ELIGIBLE it drops out of here and shows in the Eligible tab.
+  // "Answered" means we have the stored value OR the clarification's field_id is
+  // in the answered set — so the card never vanishes even if a re-verify didn't
+  // stamp answeredValue back onto this particular scheme's decision.
+  const isQuestionnaireItem = (it: SchemeDecisionItem): boolean => {
+    const c: any = it.decision?.clarification;
+    if (!c?.field_id) return false;
+    if (it.decision?.verdict === 'ELIGIBLE') return false; // moved to the Eligible tab
+    const answered =
+      (it.decision?.answeredValue != null && `${it.decision.answeredValue}`.trim() !== '') ||
+      answeredFieldIdsRef.current.has(c.field_id);
+    return isActionableNeedsInfo(it) || answered;
+  };
+
   // Derive filter options from the eligible scheme list.
   useEffect(() => {
     if (schemes.length === 0) return;
@@ -562,17 +362,32 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
     let elig = Array.from(eligibleMapRef.current.values()).sort(
       (a, b) => (b.decision.confidence === 'high' ? 1 : 0) - (a.decision.confidence === 'high' ? 1 : 0),
     );
-    // Only show needs-info schemes that still have an unanswered question, so
-    // the "Needs info N" count always matches what the popup can ask.
-    let ni = Array.from(needsInfoMapRef.current.values()).filter(isActionableNeedsInfo);
     let inel = Array.from(ineligibleMapRef.current.values());
     let actionable = Array.from(actionableMapRef.current.values());
+
+    // ── Needs-info tab = the questionnaire view ─────────────────────────────
+    // Built from EVERY bucket, not just needs-info: it keeps both the schemes
+    // that still need an answer AND the ones already answered (which have since
+    // moved to eligible/ineligible). That way the tab never drops to 0 after the
+    // user answers everything — answered schemes stay here so their answers can
+    // still be modified. Deduped by slug, and intentionally kept OUT of the
+    // cross-bucket name de-dup below (so it may overlap with its verdict tab).
+    const niMap = new Map<string, SchemeDecisionItem>();
+    for (const m of [needsInfoMapRef.current, eligibleMapRef.current, actionableMapRef.current, ineligibleMapRef.current]) {
+      for (const it of m.values()) {
+        if (isQuestionnaireItem(it) && !niMap.has(it.scheme.slug)) niMap.set(it.scheme.slug, it);
+      }
+    }
+    // Unanswered questions first (so pending input stays at the top), then answered.
+    const ni = Array.from(niMap.values()).sort(
+      (a, b) => Number(isActionableNeedsInfo(b)) - Number(isActionableNeedsInfo(a)),
+    );
 
     // ── Cross-bucket de-duplication by scheme NAME ──────────────────────────
     // Different scheme records can share a display name (e.g. a Central scheme
     // and a State implementation, or a duplicate ingest). When that happens the
     // same name can land in different tabs and look like a bug. Keep each name
-    // in only its STRONGEST bucket: eligible > actionable > needs-info > ineligible.
+    // in only its STRONGEST bucket: eligible > actionable > ineligible.
     const seenNames = new Set<string>();
     const nameKey = (it: SchemeDecisionItem) =>
       (it.scheme.schemeName || it.scheme.slug || '').trim().toLowerCase();
@@ -589,7 +404,6 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
     };
     elig = dedupeByName(elig);             // highest priority — claims the name first
     actionable = dedupeByName(actionable);
-    ni = dedupeByName(ni);
     inel = dedupeByName(inel);
 
     setEligibleItems(elig);
@@ -626,15 +440,32 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // ── Snapshot persistence (durable full card data) ────────────────────────
-  const buildSnapshotData = () => ({
-    eligible: Array.from(eligibleMapRef.current.values()),
-    needsInfo: Array.from(needsInfoMapRef.current.values()),
-    ineligible: Array.from(ineligibleMapRef.current.values()).slice(0, MAX_PERSIST_INELIGIBLE),
-    actionable: Array.from(actionableMapRef.current.values()),
-    questions: questionsRef.current,
-    answeredFieldIds: [...answeredFieldIdsRef.current],
-    progress: progressRef.current,
-  });
+  // An item carries a user answer if it has a stored value or its clarification
+  // field was answered — these must survive the ineligible cap so the user can
+  // always come back and modify the answer.
+  const isAnsweredItem = (it: SchemeDecisionItem): boolean => {
+    const fid = it.decision?.answeredFieldId || (it.decision?.clarification as any)?.field_id;
+    return (it.decision?.answeredValue != null && `${it.decision.answeredValue}`.trim() !== '')
+      || (!!fid && answeredFieldIdsRef.current.has(fid));
+  };
+
+  const buildSnapshotData = () => {
+    // Persist ALL answered ineligible schemes (never dropped by the cap), then
+    // fill the remaining budget with the rest — so modifiable answers are durable.
+    const inelAll = Array.from(ineligibleMapRef.current.values());
+    const inelAnswered = inelAll.filter(isAnsweredItem);
+    const inelRest = inelAll.filter((it) => !isAnsweredItem(it));
+    const ineligible = [...inelAnswered, ...inelRest].slice(0, Math.max(MAX_PERSIST_INELIGIBLE, inelAnswered.length));
+    return {
+      eligible: Array.from(eligibleMapRef.current.values()),
+      needsInfo: Array.from(needsInfoMapRef.current.values()),
+      ineligible,
+      actionable: Array.from(actionableMapRef.current.values()),
+      questions: questionsRef.current,
+      answeredFieldIds: [...answeredFieldIdsRef.current],
+      progress: progressRef.current,
+    };
+  };
 
   const getActiveBusinessId = (): string | undefined => {
     if (typeof window === 'undefined') return undefined;
@@ -737,22 +568,11 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
       });
       const data = await res.json();
 
-      // The engine refuses to run until the business sector/industry is set.
-      // Surface the profile-completion modal instead of erroring, then stop.
+      // The engine refuses to run until the business sector/industry is set
+      // (its only hard gate). Surface the dedicated industry popup — NOT the full
+      // profile form — so the user clears industry first, then analysis runs.
       if (data?.requiresProfile) {
-        try {
-          const mobile = sessionStorage.getItem('msme_mobile');
-          const profileRes = await fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobile}`, {
-            headers: { 'Authorization': `Bearer ${authToken}` },
-          });
-          const profileData = await profileRes.json();
-          const profile = profileData?.user || {};
-          const missing = getMissingFields(profile);
-          setPendingRawProfile(profile);
-          // Always include the sector field the engine asked for.
-          setMissingFields(missing.length > 0 ? missing : REQUIRED_SEARCH_FIELDS.filter((f) => f.key === 'sector'));
-          setShowMissingFieldsModal(true);
-        } catch { /* best-effort */ }
+        setNeedsIndustry(true);
         setAnalysisStatus('idle');
         setIsLoading(false);
         return;
@@ -765,7 +585,13 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
       sessionStorage.setItem(SESSION_KEY, data.sessionId);
       progressRef.current = { ...progressRef.current, total: data.totalPreFiltered || 0 };
       setAnalysisProgress({ ...progressRef.current });
-      connectEligibilitySocket(data.sessionId, authToken);
+      // Sandbox mode (WORKING_MODE=Sandbox): the backend serves dummy results and
+      // makes no engine calls, so skip the engine WebSocket and drive completion
+      // purely from the REST /session poll. (Covers both first analysis and the
+      // "Re-run analysis" button, which share this path.)
+      if (!data.sandbox) {
+        connectEligibilitySocket(data.sessionId, authToken);
+      }
       pollSessionUntilComplete(data.sessionId, authToken);
     } catch (err: any) {
       console.error('[Schemes] startEligibilityAnalysis error:', err);
@@ -829,7 +655,20 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
     // engine re-asks or a stale snapshot is restored later).
     Object.keys(answers).forEach((id) => answeredFieldIdsRef.current.add(id));
     persistAnswered();
-    syncBuckets(); // drop answered questions from the popup immediately
+
+    // Optimistically stamp each answer onto the affected Needs-info scheme(s)
+    // BEFORE the re-verify call. This guarantees the answer is shown as "Your
+    // answer" and persisted in the snapshot even if the re-verify below fails or
+    // doesn't return that scheme — so the Needs-info tab never silently empties
+    // and the user can always come back to modify the answer.
+    for (const it of Array.from(needsInfoMapRef.current.values())) {
+      const fid = (it.decision?.clarification as any)?.field_id;
+      if (fid && answers[fid] != null && `${answers[fid]}`.trim() !== '') {
+        routeDecision(it.scheme, { ...it.decision, answeredFieldId: fid, answeredValue: answers[fid] });
+      }
+    }
+    syncBuckets(); // reflect the recorded answers + drop answered questions from the popup
+
     try {
       const res = await fetch(`${API_BASE_URL}/api/msme-eligibility/questionnaire-submit`, {
         method: 'POST',
@@ -841,19 +680,93 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
         for (const u of data.updatedDecisions) {
           if (!u.slug || !u.decision) continue;
           // Prefer an existing fuller scheme doc; fall back to the trimmed one.
-          const existing =
-            eligibleMapRef.current.get(u.slug)?.scheme ||
-            needsInfoMapRef.current.get(u.slug)?.scheme ||
-            ineligibleMapRef.current.get(u.slug)?.scheme ||
-            actionableMapRef.current.get(u.slug)?.scheme ||
-            u.scheme || { slug: u.slug, schemeName: u.schemeName };
-          routeDecision(existing, { ...u.decision, reverified: true });
+          const prev =
+            eligibleMapRef.current.get(u.slug) ||
+            needsInfoMapRef.current.get(u.slug) ||
+            ineligibleMapRef.current.get(u.slug) ||
+            actionableMapRef.current.get(u.slug);
+          const existing = prev?.scheme || u.scheme || { slug: u.slug, schemeName: u.schemeName };
+          const prevClar = prev?.decision?.clarification;
+          const oldFid = prevClar?.field_id;
+          const newClar = u.decision.clarification as any;
+          const newFid = newClar?.field_id;
+          // The engine may re-ask a DIFFERENT follow-up question. If so, show it
+          // as a fresh unanswered question rather than mislabelling the old answer.
+          const isNewQuestion = u.decision.verdict === 'NEEDS_INFO' && !!newFid && newFid !== oldFid;
+          const recordedAnswer =
+            (oldFid && answers[oldFid] != null && `${answers[oldFid]}`.trim() !== '')
+              ? answers[oldFid]
+              : prev?.decision?.answeredValue;
+          routeDecision(existing, {
+            ...u.decision,
+            // Keep a question on the card: the new one if asked, else the original
+            // so the recorded answer stays visible and editable.
+            clarification: newClar || prevClar || null,
+            answeredFieldId: isNewQuestion ? undefined : (oldFid ?? prev?.decision?.answeredFieldId),
+            answeredValue: isNewQuestion ? undefined : recordedAnswer,
+            reverified: true,
+          });
         }
         syncBuckets();
       }
       await saveSnapshotNow(authToken, sessionId, 'complete');
     } catch (err) {
       console.error('[Schemes] submitQuestionAnswers error:', err);
+      // Persist the optimistic answers even on failure so they aren't lost.
+      try { await saveSnapshotNow(authToken, sessionId, 'complete'); } catch { /* best-effort */ }
+    } finally {
+      setIsSubmittingAnswers(false);
+    }
+  };
+
+  // Submit / modify ONE scheme's clarification answer and re-verify just that
+  // scheme. Lets the user correct a wrong answer from the Needs-info card and
+  // immediately see whether they're now eligible.
+  const submitSingleAnswer = async (
+    slug: string,
+    fieldId: string,
+    answer: string,
+  ): Promise<{ ok: boolean; verdict?: string }> => {
+    const authToken = sessionStorage.getItem('msme_auth_token') || token;
+    const sid = sessionId || sessionStorage.getItem(SESSION_KEY);
+    if (!authToken || !sid) return { ok: false };
+
+    setIsSubmittingAnswers(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/msme-eligibility/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ sessionId: sid, slug, fieldId, answer }),
+      });
+      const data = await res.json();
+      if (!data?.success || !data?.decision) return { ok: false };
+
+      // Mark answered only AFTER success, so a failed re-check never filters the
+      // scheme out of Needs-info (which would make the card disappear).
+      answeredFieldIdsRef.current.add(fieldId);
+      persistAnswered();
+
+      const prev =
+        eligibleMapRef.current.get(slug) ||
+        needsInfoMapRef.current.get(slug) ||
+        ineligibleMapRef.current.get(slug) ||
+        actionableMapRef.current.get(slug);
+      const existing = prev?.scheme || { slug };
+      const prevClar = prev?.decision?.clarification;
+      routeDecision(existing, {
+        ...data.decision,
+        // Preserve the question + the answer so the editor stays available.
+        clarification: data.decision.clarification || prevClar || null,
+        answeredFieldId: fieldId,
+        answeredValue: answer,
+        reverified: true,
+      });
+      syncBuckets();
+      await saveSnapshotNow(authToken, sid, 'complete');
+      return { ok: true, verdict: data.decision.verdict };
+    } catch (err) {
+      console.error('[Schemes] submitSingleAnswer error:', err);
+      return { ok: false };
     } finally {
       setIsSubmittingAnswers(false);
     }
@@ -895,6 +808,16 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
       });
       const profileData = await profileRes.json();
       const profile = profileData?.user || {};
+
+      // Industry/sector FIRST: if the PAN API couldn't determine it (absent or
+      // 'other'), block everything — no snapshot, no analysis — and ask the user
+      // to confirm their industry. Running the engine without it returns generic,
+      // irrelevant schemes. The popup saves it, then kicks off analysis.
+      if (isSectorUnclear(profile)) {
+        setNeedsIndustry(true);
+        setIsLoading(false);
+        return;
+      }
 
       const missing = getMissingFields(profile);
       if (missing.length > 0) {
@@ -965,21 +888,7 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
     const authToken = sessionStorage.getItem('msme_auth_token');
     if (!authToken) return;
 
-    const dbPayload: Record<string, any> = {};
-    for (const [searchKey, val] of Object.entries(values)) {
-      const dbKey = DB_SAVE_KEY_MAP[searchKey] ?? searchKey;
-      if (searchKey === 'annual_turnover') {
-        const T: Record<string, number> = { under5L: 2.5, '5L_40L': 22.5, '40L_1Cr': 70, '1Cr_10Cr': 550, '10Cr_250Cr': 13000, above250Cr: 30000 };
-        dbPayload['annualTurnoverLakhs'] = T[val] ?? null;
-      } else if (searchKey === 'total_employees') {
-        const E: Record<string, number> = { '1_5': 3, '6_25': 15, '26_100': 60, '101_500': 250, '501_plus': 600 };
-        dbPayload['total_employees'] = E[val] ?? null;
-      } else if (['differently_abled', 'bpl', 'minority', 'udyam_registered', 'is_startup'].includes(searchKey)) {
-        dbPayload[dbKey] = val === 'true';
-      } else {
-        dbPayload[dbKey] = val;
-      }
-    }
+    const dbPayload = buildEligibilityDbPayload(values);
 
     try {
       const saveRes = await fetch(`${API_BASE_URL}/api/msme-auth/profile/eligibility`, {
@@ -1001,6 +910,31 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const dismissMissingFieldsModal = () => setShowMissingFieldsModal(false);
+
+  // Save the user-confirmed industry to the ACTIVE business, then run the engine.
+  // This is the gate that guarantees analysis never runs on an unclear sector.
+  const submitIndustry = async (sector: string) => {
+    const authToken = sessionStorage.getItem('msme_auth_token') || token;
+    if (!authToken || !sector) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/msme-auth/profile/eligibility`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ businessSector: sector, businessId: getActiveBusinessId() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || 'Failed to save industry');
+      setNeedsIndustry(false);
+      // Fresh run so the engine re-evaluates with the now-known industry.
+      await startEligibilityAnalysis(authToken, { refresh: true });
+    } catch (err) {
+      console.error('[Schemes] submitIndustry error:', err);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // ─── Scheme detail (AI engine catalogue) ──────────────────────────────────
   const fetchEngineScheme = async (slug: string): Promise<any | null> => {
@@ -1091,6 +1025,12 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
       });
       const profileData = await profileRes.json();
       const profile = profileData?.user || {};
+      // Industry first — never re-run the engine with an unclear sector.
+      if (isSectorUnclear(profile)) {
+        setNeedsIndustry(true);
+        setIsLoading(false);
+        return;
+      }
       const missing = getMissingFields(profile);
       if (missing.length > 0) {
         setPendingRawProfile(profile);
@@ -1193,12 +1133,14 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
   const value: SchemesContextType = {
     schemes, savedSchemes, searchQuery, selectedFilters, filterOptions, isLoading, currentPage,
     itemsPerPage, missingFields, showMissingFieldsModal,
+    needsIndustry, industryOptions, submitIndustry,
     analysisStatus, analysisError, analysisProgress,
     eligibleItems, needsInfoItems, ineligibleItems, actionableItems, questions, isSubmittingAnswers, sessionId, lastUpdated,
     setSearchQuery, setSelectedFilters, loadSchemesForDashboard, searchSchemes, saveScheme,
     removeSavedScheme, getSavedSchemes, getSchemeById, setCurrentPage, getTotalPages, getFilteredSchemes,
     submitMissingFields, dismissMissingFieldsModal, getSchemeDetailBySlug, getSchemeDocuments,
     getSchemeFaqs, getSchemeApplicationProcess, fetchSchemeBySlug, refreshSchemes, submitQuestionAnswers,
+    submitSingleAnswer,
   };
 
   return <SchemesContext.Provider value={value}>{children}</SchemesContext.Provider>;

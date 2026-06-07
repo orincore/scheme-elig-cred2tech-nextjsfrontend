@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { RequestDocumentsDialog } from '@/components/cases/RequestDocumentsDialog';
 import {
   ArrowLeft,
   Building2,
@@ -263,9 +264,6 @@ export default function CaseDetailPage() {
 
   // ── Request-document dialog ──────────────────────────────────────────────────
   const [reqDocOpen, setReqDocOpen]           = useState(false);
-  const [reqDocName, setReqDocName]           = useState('');
-  const [reqDocDescription, setReqDocDescription] = useState('');
-  const [requestingDoc, setRequestingDoc]     = useState(false);
 
   // ── Fetch case details ───────────────────────────────────────────────────────
   const fetchCaseDetails = async (showSpinner = false) => {
@@ -398,27 +396,10 @@ export default function CaseDetailPage() {
     }
   };
 
-  // ── Request document handler ─────────────────────────────────────────────────
-  const handleRequestDocument = async () => {
-    if (!reqDocName.trim()) { toast.error('Please enter a document name'); return; }
-    setRequestingDoc(true);
-    try {
-      const res = await casesApi.createDocumentRequest(caseId, reqDocName.trim(), reqDocDescription.trim() || undefined);
-      if (res.success) {
-        toast.success(`Document request for "${reqDocName}" sent to MSME`);
-        setReqDocOpen(false);
-        setReqDocName('');
-        setReqDocDescription('');
-        await fetchDocumentRequests();
-        await fetchCaseDetails();
-      } else {
-        toast.error('Failed to send document request');
-      }
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to send document request');
-    } finally {
-      setRequestingDoc(false);
-    }
+  // ── Request documents (multiple) ─────────────────────────────────────────────
+  const refreshAfterDocRequests = async () => {
+    await fetchDocumentRequests();
+    await fetchCaseDetails();
   };
 
   // ── Loading / error ───────────────────────────────────────────────────────────
@@ -793,31 +774,13 @@ export default function CaseDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Request Document */}
-      <Dialog open={reqDocOpen} onOpenChange={(open) => { if (!requestingDoc) { setReqDocOpen(open); if (!open) { setReqDocName(''); setReqDocDescription(''); } } }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><FilePlus className="h-5 w-5" />Request Document</DialogTitle>
-            <DialogDescription>The MSME will see this request on their application tracking page.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label>Document Name *</Label>
-              <Input placeholder="e.g. GST Certificate, Aadhaar…" value={reqDocName} onChange={(e) => setReqDocName(e.target.value)} className="h-9 text-sm" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Instructions <span className="text-muted-foreground text-xs">(optional)</span></Label>
-              <Textarea placeholder="Any specific instructions…" value={reqDocDescription} onChange={(e) => setReqDocDescription(e.target.value)} rows={3} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setReqDocOpen(false)} disabled={requestingDoc}>Cancel</Button>
-            <Button size="sm" onClick={handleRequestDocument} disabled={!reqDocName.trim() || requestingDoc}>
-              {requestingDoc && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send Request
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Request Documents (one or more) */}
+      <RequestDocumentsDialog
+        open={reqDocOpen}
+        onOpenChange={setReqDocOpen}
+        onCreate={(name, description) => casesApi.createDocumentRequest(caseId, name, description)}
+        onDone={refreshAfterDocRequests}
+      />
 
       {/* Update Status */}
       <Dialog open={statusOpen} onOpenChange={(open) => { if (!updatingStatus) { setStatusOpen(open); if (!open) setStatusNotes(''); } }}>

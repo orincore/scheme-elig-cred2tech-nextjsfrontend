@@ -2,13 +2,15 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useSchemes, SchemeDecisionItem, Scheme } from '@/contexts/SchemesContext';
+import { useSchemes, SchemeDecisionItem, Scheme, SchemeDecision } from '@/contexts/SchemesContext';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   CheckCircle2, XCircle, HelpCircle, Bookmark, BookmarkCheck, ArrowRight,
   Gift, ChevronDown, ChevronUp, Building2, ShieldCheck, FileText, Circle, ListChecks, Target,
+  Loader2, Pencil, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { buildDocMatches, getOwnedDocs, OwnedDocs } from '@/lib/documentMatch';
@@ -47,6 +49,122 @@ const THEME = {
   ACTIONABLE: { accent: 'bg-indigo-500',  pill: 'text-indigo-700 bg-indigo-50 ring-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/30 dark:ring-indigo-900', dot: 'bg-indigo-500', label: 'Could qualify', Icon: Target },
   INELIGIBLE: { accent: 'bg-slate-300 dark:bg-slate-700', pill: 'text-slate-500 bg-slate-50 ring-slate-200 dark:text-slate-400 dark:bg-slate-900 dark:ring-slate-800', dot: 'bg-slate-400', label: 'Not eligible', Icon: XCircle },
 } as const;
+
+// Compact answer input for a clarification, matching the popup's controls.
+function ClarInput({
+  clar, value, onChange, disabled,
+}: {
+  clar: NonNullable<SchemeDecision['clarification']>;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const fmt = (clar.expected_format || '').toLowerCase();
+  const isYesNo = fmt === 'yes_no' || fmt === 'boolean' || fmt === 'yesno';
+  if (isYesNo) {
+    return (
+      <div className="flex gap-2">
+        {['yes', 'no'].map((opt) => (
+          <button key={opt} type="button" disabled={disabled} onClick={() => onChange(opt)}
+            className={`flex-1 px-3 py-1.5 rounded-lg border text-[13px] font-medium capitalize transition-all ${
+              value === opt ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'border-border text-muted-foreground hover:border-primary/60 hover:bg-primary/5'
+            }`}>{opt}</button>
+        ))}
+      </div>
+    );
+  }
+  if (clar.options && clar.options.length > 0) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {clar.options.map((opt) => (
+          <button key={opt} type="button" disabled={disabled} onClick={() => onChange(opt)}
+            className={`px-3 py-1.5 rounded-lg border text-[13px] transition-all ${
+              value === opt ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'border-border text-muted-foreground hover:border-primary/60 hover:bg-primary/5'
+            }`}>{opt}</button>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <Input type={fmt === 'number' ? 'number' : 'text'} value={value} disabled={disabled}
+      placeholder="Type your answer" className="h-9 text-[13px]"
+      onChange={(e) => onChange(e.target.value)} />
+  );
+}
+
+// Inline "answer / modify clarification → re-check eligibility" block, shown on
+// Needs-info cards (to answer) and on any card the user has already answered (to
+// fix a wrong answer). Re-checks just this scheme and updates its verdict.
+function ClarificationAnswer({ slug, decision }: { slug: string; decision: SchemeDecision }) {
+  const { submitSingleAnswer } = useSchemes();
+  const clar = decision.clarification;
+  const answered = decision.answeredValue;
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(answered ?? '');
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!clar?.field_id) return null;
+
+  const submit = async () => {
+    const v = value.trim();
+    if (!v) { toast.error('Please provide an answer'); return; }
+    setSubmitting(true);
+    const res = await submitSingleAnswer(slug, clar.field_id!, v);
+    setSubmitting(false);
+    if (!res.ok) { toast.error('Couldn’t re-check. Please try again.'); return; }
+    setEditing(false);
+    toast.success(
+      res.verdict === 'ELIGIBLE' ? 'Great news — you’re now eligible!'
+        : res.verdict === 'INELIGIBLE' ? 'Updated — not eligible based on your answer.'
+        : 'Answer updated.',
+    );
+  };
+
+  // Already answered, not editing → show the answer with an Edit affordance.
+  if (answered && !editing) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/30 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Your answer</p>
+            <p className="text-[13px] font-medium text-foreground capitalize truncate">{answered}</p>
+          </div>
+          <button type="button" onClick={() => { setValue(answered); setEditing(true); }}
+            className="inline-flex items-center gap-1 text-[12px] font-semibold text-primary hover:underline shrink-0">
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </button>
+        </div>
+        <p className="mt-1.5 text-[11px] text-muted-foreground line-clamp-2">{clar.question}</p>
+      </div>
+    );
+  }
+
+  // Unanswered (Needs-info) OR editing → question + input + re-check.
+  return (
+    <div className="rounded-lg border border-amber-200/70 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-950/10 p-3 space-y-2.5">
+      <p className="text-[13px] text-foreground">{clar.question}</p>
+      {clar.why_needed && <p className="text-[11px] text-muted-foreground -mt-1">{clar.why_needed}</p>}
+      <ClarInput clar={clar} value={value} onChange={setValue} disabled={submitting} />
+      <div className="flex items-center gap-2 pt-0.5">
+        <Button size="sm" className="h-8 text-[12px]" onClick={submit} disabled={submitting || !value.trim()}>
+          {submitting
+            ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Re-checking…</>
+            : answered
+              ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Re-check</>
+              : <><CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Check eligibility</>}
+        </Button>
+        {answered && (
+          <Button size="sm" variant="ghost" className="h-8 text-[12px]" disabled={submitting}
+            onClick={() => { setEditing(false); setValue(answered); }}>
+            Cancel
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function SchemeDecisionCard({ item, ownedDocs }: { item: SchemeDecisionItem; ownedDocs?: OwnedDocs }) {
   const { saveScheme, removeSavedScheme, savedSchemes } = useSchemes();
@@ -132,12 +250,11 @@ export default function SchemeDecisionCard({ item, ownedDocs }: { item: SchemeDe
           </div>
         )}
 
-        {/* NEEDS_INFO — the open question */}
-        {decision.verdict === 'NEEDS_INFO' && clar?.question && (
-          <div className="rounded-lg border border-amber-200/70 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-950/10 p-3">
-            <p className="text-[13px] text-foreground">{clar.question}</p>
-            <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">Answer it in the questions popup to confirm eligibility.</p>
-          </div>
+        {/* NEEDS_INFO question — or, for an already-answered scheme, the answer
+            with an Edit control. Answering/modifying re-checks just this scheme
+            and updates its verdict. */}
+        {clar?.field_id && (decision.verdict === 'NEEDS_INFO' || decision.answeredValue) && (
+          <ClarificationAnswer slug={slug} decision={decision} />
         )}
 
         {/* ACTIONABLE — steps to become eligible */}

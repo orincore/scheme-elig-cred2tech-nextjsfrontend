@@ -54,32 +54,44 @@ function fmt(ms: number) {
 // ── Computation ───────────────────────────────────────────────────────────────
 
 /**
- * Compute periods for a single day using ONLY explicit punches that fall within
- * [dayStart, dayEnd]. Each period runs from its punch time to the next punch
- * (or to `now` if it's the last/current status). NO carryover from previous days.
+ * Compute periods for a single day, treating availability as a STEP FUNCTION:
+ * each punch sets a status that HOLDS until the next punch (or until now). The
+ * status active at the start of the day is carried in from the most recent punch
+ * before it — so a status set once continues across the following days until it
+ * is explicitly changed, instead of disappearing the next day.
  */
 function computeDayPeriods(log: LogEntry[], dayStart: Date, dayEnd: Date) {
   const now = new Date();
+  if (dayStart.getTime() > now.getTime()) return [];
   const cap = new Date(Math.min(dayEnd.getTime(), now.getTime()));
 
-  // Keep only entries whose changedAt falls strictly within this day
-  const dayEntries = log.filter((e) => {
-    const t = new Date(e.changedAt);
-    return t >= dayStart && t <= cap;
-  });
+  const sorted = log
+    .map((e) => ({ status: e.status, t: new Date(e.changedAt).getTime() }))
+    .filter((e) => Number.isFinite(e.t))
+    .sort((a, b) => a.t - b.t);
+  if (!sorted.length) return [];
 
-  if (!dayEntries.length) return [];
+  // Status carried into this day = the latest punch at/before dayStart.
+  let segStatus: string | null = null;
+  for (const e of sorted) {
+    if (e.t <= dayStart.getTime()) segStatus = e.status;
+    else break;
+  }
+
+  // Punches within the day.
+  const inDay = sorted.filter((e) => e.t > dayStart.getTime() && e.t <= cap.getTime());
 
   const periods: { status: string; start: Date; end: Date; durationMs: number }[] = [];
-  for (let i = 0; i < dayEntries.length; i++) {
-    const start = new Date(dayEntries[i].changedAt);
-    const end   = i + 1 < dayEntries.length
-      ? new Date(dayEntries[i + 1].changedAt)
-      : cap; // last punch runs until now (or end of day, whichever is earlier)
-    const durationMs = end.getTime() - start.getTime();
-    if (durationMs > 0) {
-      periods.push({ status: dayEntries[i].status, start, end, durationMs });
+  let segStart = dayStart.getTime();
+  for (const e of inDay) {
+    if (segStatus != null && e.t > segStart) {
+      periods.push({ status: segStatus, start: new Date(segStart), end: new Date(e.t), durationMs: e.t - segStart });
     }
+    segStart = e.t;
+    segStatus = e.status;
+  }
+  if (segStatus != null && cap.getTime() > segStart) {
+    periods.push({ status: segStatus, start: new Date(segStart), end: cap, durationMs: cap.getTime() - segStart });
   }
   return periods;
 }

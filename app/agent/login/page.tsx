@@ -137,12 +137,12 @@ export default function AgentLoginPage() {
             error={fieldErrors.password}
           />
           <div className="flex justify-end mt-2">
-            <button
-              type="button"
-              className="text-[13px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors bg-transparent border-0 cursor-pointer"
+            <Link
+              href="/agent/forgot-password"
+              className="text-[13px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
             >
               Forgot password?
-            </button>
+            </Link>
           </div>
         </div>
       </div>

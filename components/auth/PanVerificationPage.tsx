@@ -8,6 +8,10 @@ import { UnderlineField, fieldLabelClass } from '@/components/ui/underline-field
 import TravelingBorderButton from '@/components/ui/traveling-border-button';
 import { toast } from 'sonner';
 import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
@@ -27,8 +31,11 @@ export default function PanVerificationPage() {
   const [panData, setPanData] = useState<any>(null);
   const [verifiedBusinessId, setVerifiedBusinessId] = useState<number | null>(null);
   const [panError, setPanError] = useState<string | null>(null);
+  // Set when the PAN already exists on a DIFFERENT profile — we ask the user to
+  // confirm before adding it to this account.
+  const [duplicatePrompt, setDuplicatePrompt] = useState<string | null>(null);
 
-  const handlePanVerify = async () => {
+  const handlePanVerify = async (confirmDuplicatePan = false) => {
     if (!pan || pan.length !== 10) {
       toast.error('Please enter a valid 10-character PAN');
       return;
@@ -55,10 +62,19 @@ export default function PanVerificationPage() {
           ...(isAddingAnother
             ? { createNew: true }
             : { businessId: pendingBusinessId ?? undefined }),
+          // Set after the user confirms they want to add a PAN that already
+          // exists on a different profile.
+          ...(confirmDuplicatePan ? { confirmDuplicatePan: true } : {}),
         }),
       });
 
       const data = await response.json();
+
+      // PAN exists on another profile → ask the user to confirm, then retry.
+      if (data.requiresPanConfirmation) {
+        setDuplicatePrompt(data.message || 'This PAN is already registered on a different profile. Do you still want to add it?');
+        return;
+      }
 
       if (data.success) {
         setPanData(data.data);
@@ -163,7 +179,7 @@ export default function PanVerificationPage() {
             ) : (
               <button
                 type="button"
-                onClick={handlePanVerify}
+                onClick={() => handlePanVerify()}
                 disabled={verifyingPan || pan.length !== 10}
                 className="text-[13px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
               >
@@ -233,10 +249,33 @@ export default function PanVerificationPage() {
               <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
             </div>
           ) : (
-            <span>Continue to Payment</span>
+            <span>Continue</span>
           )}
         </TravelingBorderButton>
       </div>
+
+      {/* PAN-already-on-another-profile confirmation */}
+      <AlertDialog open={!!duplicatePrompt} onOpenChange={(o) => { if (!o) setDuplicatePrompt(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-500" /> PAN already on another profile
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {duplicatePrompt}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={verifyingPan}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); setDuplicatePrompt(null); handlePanVerify(true); }}
+              disabled={verifyingPan}
+            >
+              Yes, add it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AuthShell>
   );
 }

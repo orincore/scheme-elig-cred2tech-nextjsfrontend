@@ -111,7 +111,17 @@ export const agentAuthApi = {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   }, 'agent'),
-  
+
+  forgotPassword: (email: string) => fetchApi('/api/agent-auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  }, 'agent'),
+
+  resetPassword: (email: string, otp: string, newPassword: string) => fetchApi('/api/agent-auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp, newPassword }),
+  }, 'agent'),
+
   getProfile: () => fetchApi('/api/agent-auth/profile', {}, 'agent'),
   
   updateProfile: (data: any) => fetchApi('/api/agent-auth/profile', {
@@ -181,6 +191,14 @@ export const adminAuthApi = {
     method: 'PUT',
     body: JSON.stringify({ availability }),
   }, 'admin'),
+
+  getAgentAvailabilityLog: (agentId: string | number, params?: { from?: string; to?: string }) => {
+    const clean = Object.entries(params || {})
+      .filter(([, v]) => v)
+      .map(([k, v]) => [k, String(v)]) as [string, string][];
+    const query = new URLSearchParams(clean).toString();
+    return fetchApi(`/api/admin-auth/agents/${agentId}/availability-log${query ? '?' + query : ''}`, {}, 'admin');
+  },
 
   // ── AI usage & cost monitoring ──
   getAiUsageSummary: (params?: { from?: string; to?: string; stage?: string }) => {

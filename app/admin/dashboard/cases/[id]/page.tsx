@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { RequestDocumentsDialog } from '@/components/cases/RequestDocumentsDialog';
 import {
   Dialog,
   DialogContent,
@@ -190,9 +191,6 @@ export default function AdminCaseDetailPage() {
 
   // ── Request-document dialog ────────────────────────────────────────────────
   const [reqDocOpen, setReqDocOpen] = useState(false);
-  const [reqDocName, setReqDocName] = useState('');
-  const [reqDocDesc, setReqDocDesc] = useState('');
-  const [requesting, setRequesting] = useState(false);
 
   // ── Update-status dialog ────────────────────────────────────────────────────
   const [statusOpen, setStatusOpen] = useState(false);
@@ -303,41 +301,19 @@ export default function AdminCaseDetailPage() {
     }
   };
 
-  // ── Request document ─────────────────────────────────────────────────────────
-  const handleRequestDocument = async () => {
-    if (!reqDocName) {
-      toast.error('Please enter document name');
-      return;
-    }
-    setRequesting(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/cases/admin/${caseId}/document-requests`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          documentName: reqDocName,
-          description: reqDocDesc
-        })
-      });
-      const data = await res.json();
-      
-      if (data.success) {
-        toast.success('Document requested successfully');
-        setReqDocOpen(false);
-        setReqDocName('');
-        setReqDocDesc('');
-        await fetchCaseDetails();
-      } else {
-        toast.error(data.message || 'Request failed');
-      }
-    } catch (err: any) {
-      toast.error(err.message || 'Request failed. Please try again.');
-    } finally {
-      setRequesting(false);
-    }
+  // ── Request document(s) ──────────────────────────────────────────────────────
+  // Creates ONE request; the shared dialog loops this for each document the admin
+  // adds, so multiple documents can be requested in a single popup.
+  const createAdminDocRequest = async (documentName: string, description?: string) => {
+    const res = await fetch(`${API_BASE_URL}/api/cases/admin/${caseId}/document-requests`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ documentName, description }),
+    });
+    return res.json();
   };
 
   // ── Update status ──────────────────────────────────────────────────────────
@@ -708,33 +684,13 @@ export default function AdminCaseDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Request Document */}
-      <Dialog open={reqDocOpen} onOpenChange={(open) => { if (!requesting) setReqDocOpen(open); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FilePlus className="h-5 w-5" />Request Document
-            </DialogTitle>
-            <DialogDescription>Ask the MSME user to upload a specific document.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="docName">Document Name</Label>
-              <Input id="docName" value={reqDocName} onChange={(e) => setReqDocName(e.target.value)} placeholder="e.g. PAN Card, GST Certificate" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="docDesc">Description (optional)</Label>
-              <Textarea id="docDesc" value={reqDocDesc} onChange={(e) => setReqDocDesc(e.target.value)} placeholder="Additional details" rows={3} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setReqDocOpen(false)} disabled={requesting}>Cancel</Button>
-            <Button size="sm" onClick={handleRequestDocument} disabled={!reqDocName || requesting}>
-              {requesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Request
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Request Documents (one or more) */}
+      <RequestDocumentsDialog
+        open={reqDocOpen}
+        onOpenChange={setReqDocOpen}
+        onCreate={createAdminDocRequest}
+        onDone={fetchCaseDetails}
+      />
 
       {/* Update Status */}
       <Dialog open={statusOpen} onOpenChange={setStatusOpen}>

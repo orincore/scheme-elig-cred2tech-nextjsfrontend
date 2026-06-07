@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   ChevronUp,
+  ReceiptText,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -31,6 +32,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Discover Schemes', icon: LayoutGrid, exact: true },
   { href: '/saved-schemes', label: 'Saved Schemes', icon: Bookmark },
   { href: '/track-applications', label: 'Track Applications', icon: FileText },
+  { href: '/transactions', label: 'Transactions', icon: ReceiptText },
   { href: '/profile', label: 'Profile', icon: User },
 ];
 

@@ -5,9 +5,10 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { adminAuthApi } from '@/lib/services/api';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AvailabilityCalendar, type AvailabilityLogEntry } from '@/components/calendar/AvailabilityCalendar';
 import {
   ArrowLeft, User, Mail, Phone, MapPin, Briefcase, Calendar,
-  ShieldCheck, Star, Clock, ExternalLink,
+  ShieldCheck, Star, Clock, ExternalLink, CalendarDays,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -76,13 +77,46 @@ export default function AgentProfilePage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // Availability calendar (view + admin update)
+  const [availability, setAvailability] = useState<string>('');
+  const [availLog, setAvailLog] = useState<AvailabilityLogEntry[]>([]);
+  const [availLogLoading, setAvailLogLoading] = useState(true);
+
   useEffect(() => {
     if (!id) return;
     adminAuthApi.getAgentById(id)
-      .then((res) => { if (res.success) setData(res); })
+      .then((res) => { if (res.success) { setData(res); setAvailability(res.agent?.availability || ''); } })
       .catch((e: any) => toast.error(e?.message || 'Failed to load agent'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Load the agent's AUX availability log for the visible calendar range.
+  const loadAvailLog = (from: string, to: string) => {
+    if (!id) return;
+    setAvailLogLoading(true);
+    adminAuthApi.getAgentAvailabilityLog(id, { from, to })
+      .then((res) => { if (res.success) setAvailLog(res.log); })
+      .catch((e: any) => toast.error(e?.message || 'Failed to load calendar'))
+      .finally(() => setAvailLogLoading(false));
+  };
+
+  // Admin sets the agent's current availability (also appends a calendar punch).
+  const handleSetAvailability = async (status: string) => {
+    if (!id) return;
+    try {
+      const res = await adminAuthApi.updateAgentAvailability(id, status);
+      if (res.success) {
+        setAvailability(status);
+        // Reflect the new punch on the calendar immediately.
+        setAvailLog((prev) => [...prev, { id: `live-${Date.now()}`, status, changedAt: new Date().toISOString() }]);
+        toast.success(res.message || `Availability set to ${status.replace(/_/g, ' ')}`);
+      } else {
+        toast.error(res.message || 'Failed to update availability');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update availability');
+    }
+  };
 
   if (loading) {
     return (
@@ -250,6 +284,17 @@ export default function AgentProfilePage() {
           )}
         </Section>
       </div>
+
+      {/* Availability calendar — view history + update current status */}
+      <Section title="Availability Calendar" icon={CalendarDays}>
+        <AvailabilityCalendar
+          log={availLog}
+          loading={availLogLoading}
+          onRangeChange={loadAvailLog}
+          currentAvailability={availability}
+          onSetAvailability={handleSetAvailability}
+        />
+      </Section>
     </div>
   );
 }

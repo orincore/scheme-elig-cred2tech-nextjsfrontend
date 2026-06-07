@@ -99,12 +99,12 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Danger zone */}
+          {/* Session Management */}
           <div className="bg-card border border-destructive/30 rounded-none overflow-hidden">
             <div className="px-5 py-3.5 border-b border-destructive/30 bg-destructive/5">
               <h3 className="text-[13px] font-bold text-destructive flex items-center gap-2">
                 <ShieldAlert className="h-4 w-4" />
-                Danger Zone
+                Sessoion Management
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">Irreversible actions for your account</p>
             </div>
