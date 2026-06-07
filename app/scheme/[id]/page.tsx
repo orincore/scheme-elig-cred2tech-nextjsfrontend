@@ -21,7 +21,7 @@ export default function SchemePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if user is authenticated via sessionStorage (works on refresh)
+    // Check if user is authenticated via sessionStorage
     const token = sessionStorage.getItem('msme_auth_token');
     if (!token && authStep !== 'authenticated') {
       router.push('/');
