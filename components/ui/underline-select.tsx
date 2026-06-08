@@ -65,7 +65,7 @@ export function UnderlineSelect({
             : 'border-gray-200 dark:border-gray-700 focus-within:border-indigo-600 dark:focus-within:border-indigo-400'
         } ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
       >
-        <span className={!value ? 'text-[#4a5d73]/60 dark:text-[#94a3b8]/60' : ''}>
+        <span className={!value ? 'text-black dark:text-[#94a3b8]/60' : ''}>
           {selectedLabel || placeholder}
         </span>
         <ChevronDown

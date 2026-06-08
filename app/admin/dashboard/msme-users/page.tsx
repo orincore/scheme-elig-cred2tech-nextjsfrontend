@@ -139,17 +139,16 @@ export default function MsmeUsersPage() {
         <div className="overflow-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <colgroup>
-              <col style={{ width: '22%' }} />
+              <col style={{ width: '24%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '24%' }} />
               <col style={{ width: '14%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '12%' }} />
+              <col style={{ width: '14%' }} />
               <col style={{ width: '8%' }} />
             </colgroup>
             <thead>
               <tr className="bg-background border-b-2 border-border">
-                {['User', 'Mobile', 'Business', 'Location', 'KYC', 'Cases', ''].map((h) => (
+                {['User', 'Mobile', 'Business', 'KYC', 'Cases', ''].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-[10px] font-extrabold text-muted-foreground uppercase tracking-[0.1em]">{h}</th>
                 ))}
               </tr>
@@ -158,14 +157,14 @@ export default function MsmeUsersPage() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} className="border-b border-border">
-                    {Array.from({ length: 7 }).map((__, j) => (
+                    {Array.from({ length: 6 }).map((__, j) => (
                       <td key={j} className="px-5 py-4"><Skeleton className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center text-sm text-muted-foreground">
+                  <td colSpan={6} className="px-5 py-16 text-center text-sm text-muted-foreground">
                     No MSME users found{search ? ` for "${search}"` : ''}
                   </td>
                 </tr>
@@ -197,10 +196,6 @@ export default function MsmeUsersPage() {
                       {u.enterpriseCategory && u.enterpriseCategory !== '—' && (
                         <p className="text-[10px] text-muted-foreground">{u.enterpriseCategory}</p>
                       )}
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="text-sm text-foreground">{u.state !== '—' ? u.state : <span className="text-muted-foreground/40">—</span>}</p>
-                      {u.city && u.city !== '—' && <p className="text-[10px] text-muted-foreground">{u.city}</p>}
                     </td>
                     <td className="px-5 py-4"><KycPill status={u.kycStatus} /></td>
                     <td className="px-5 py-4">

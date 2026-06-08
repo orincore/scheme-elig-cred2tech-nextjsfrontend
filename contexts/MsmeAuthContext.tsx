@@ -110,6 +110,11 @@ export interface AuthContextType {
   initiateDataRefresh: () => Promise<{ orderId: string; amount: number; currency: string; keyId: string } | null>;
   completeDataRefresh: (orderId: string, paymentId: string, signature: string) => Promise<boolean>;
   logout: () => void;
+  /**
+   * Cancel onboarding: delete the incomplete account created during this flow
+   * (if any), wipe all local/session storage, and return to the landing page.
+   */
+  abandonOnboarding: () => Promise<void>;
 }
 
 const MsmeAuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -149,6 +154,15 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       const bizRes = await fetch(`${API_BASE_URL}/api/msme-auth/businesses`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
+
+      // A 401 means the token's account no longer exists (admin deleted it) or the
+      // session was revoked. Don't bounce the ghost session into onboarding — clear
+      // it and return to the landing page so the user can log in fresh.
+      if (bizRes.status === 401) {
+        logout();
+        return null;
+      }
+
       const bizData = await bizRes.json();
       const list: BusinessProfile[] = bizData?.businesses || [];
       const activeId = bizData?.activeBusinessId ?? list.find((b) => b.isPrimary)?.id ?? list[0]?.id ?? null;
@@ -675,6 +689,35 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     router.push('/');
   };
 
+  const abandonOnboarding = async (): Promise<void> => {
+    const authToken = token || sessionStorage.getItem('msme_auth_token');
+    const uid = userId || sessionStorage.getItem('msme_user_id');
+
+    // Delete the half-finished account so abandoned onboarding doesn't leave an
+    // orphan user (no PAN / no complete profile) behind. Best-effort — even if
+    // the call fails we still clear the local session below.
+    if (authToken && uid) {
+      try {
+        await fetch(`${API_BASE_URL}/api/msme-auth/delete/${uid}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+      } catch {
+        /* non-fatal */
+      }
+    }
+
+    // Wipe everything so no stale onboarding state survives the logout.
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      /* storage may be unavailable — logout() still resets in-memory state */
+    }
+
+    logout();
+  };
+
   const value: AuthContextType = {
     token,
     mobile,
@@ -702,6 +745,7 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     initiateDataRefresh,
     completeDataRefresh,
     logout,
+    abandonOnboarding,
   };
 
   return (

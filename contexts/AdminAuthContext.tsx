@@ -146,7 +146,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     setPendingAgents([]);
     setAllAgents([]);
     toast.success('Logged out successfully');
-    window.location.href = '/admin/login';
+    window.location.href = '/';
   }, []);
 
   const fetchStats = useCallback(async () => {
@@ -224,10 +224,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await adminAuthApi.logoutAllDevices();
     } finally {
-      // This device's token is now revoked too — clear and return to login.
+      // This device's token is now revoked too — clear and return to the landing page.
       localStorage.removeItem('admin_token');
       setAdmin(null);
-      if (typeof window !== 'undefined') window.location.href = '/admin/login';
+      if (typeof window !== 'undefined') window.location.href = '/';
     }
   }, []);
 

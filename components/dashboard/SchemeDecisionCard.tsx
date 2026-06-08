@@ -195,7 +195,7 @@ export default function SchemeDecisionCard({ item, ownedDocs }: { item: SchemeDe
   const docsToShow = showDocs ? docMatches : docMatches.slice(0, 4);
 
   return (
-    <Card className="elig-card-in group relative flex flex-col overflow-hidden p-0 rounded-2xl border border-border bg-card shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-primary/30 transition-all duration-200">
+    <Card className="elig-card-in group relative flex flex-col overflow-hidden p-0 rounded-none border border-border bg-card hover:border-primary/40 transition-colors">
       <div className="flex flex-col gap-3 p-5">
         {/* Header */}
         <div className="flex items-start justify-between gap-3">

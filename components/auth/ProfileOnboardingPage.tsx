@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { MsmeAuthBrand } from '@/components/auth/msme-auth-brand';
+import { OnboardingLogoutButton } from '@/components/auth/onboarding-logout-button';
 import TravelingBorderButton from '@/components/ui/traveling-border-button';
+import { fieldWrapperClass, fieldInputClass } from '@/components/ui/underline-field';
+import { UnderlineSelect } from '@/components/ui/underline-select';
 import {
   MissingField,
   REQUIRED_SEARCH_FIELDS,
@@ -98,7 +101,8 @@ export default function ProfileOnboardingPage() {
   return (
     <AuthShell
       brand={<MsmeAuthBrand />}
-      contentClassName="flex-1 flex flex-col px-6 py-8 md:px-16 lg:px-24 md:py-12 justify-center max-w-2xl mx-auto w-full"
+      headerSlot={<OnboardingLogoutButton />}
+      contentClassName="flex-1 flex flex-col px-6 py-8 md:px-12 lg:px-16 md:py-12 justify-center max-w-5xl mx-auto w-full"
     >
       <div className="mb-8">
         <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-950/40">
@@ -119,40 +123,34 @@ export default function ProfileOnboardingPage() {
         </div>
       ) : (
         <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 items-stretch">
             {fields.map((field) => (
-              <div key={field.key} className="space-y-1.5">
-                <label className="text-[13px] font-semibold text-[#0a1628] dark:text-[#e6edf7]">
-                  {field.label}
-                  <span className="text-red-500 ml-1">*</span>
-                </label>
+              <div key={field.key} className="flex flex-col h-full">
+                <label className="block text-[12px] font-medium text-black dark:text-[#94a3b8] mb-1.5">{field.label} *</label>
                 {field.type === 'select' && field.options ? (
-                  <select
+                  <UnderlineSelect
+                    className="mt-auto"
                     value={values[field.key] || ''}
-                    onChange={(e) => handleChange(field.key, e.target.value)}
-                    className="w-full h-11 px-3 rounded-lg bg-white dark:bg-[#162048] border border-gray-200 dark:border-gray-700 text-[#0a1628] dark:text-[#e6edf7] text-[14px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  >
-                    <option value="">Select {field.label}</option>
-                    {field.options.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type={field.type === 'number' ? 'number' : 'text'}
-                    placeholder={`Enter ${field.label}`}
-                    value={values[field.key] || ''}
-                    onChange={(e) => handleChange(field.key, e.target.value)}
-                    className="w-full h-11 px-3 rounded-lg bg-white dark:bg-[#162048] border border-gray-200 dark:border-gray-700 text-[#0a1628] dark:text-[#e6edf7] text-[14px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    onChange={(v) => handleChange(field.key, v)}
+                    options={field.options}
+                    placeholder={`Select ${field.label}`}
                   />
+                ) : (
+                  <div className={`mt-auto ${fieldWrapperClass()}`}>
+                    <input
+                      type={field.type === 'number' ? 'number' : 'text'}
+                      placeholder={`Enter ${field.label}`}
+                      value={values[field.key] || ''}
+                      onChange={(e) => handleChange(field.key, e.target.value)}
+                      className={`${fieldInputClass} placeholder:text-black dark:placeholder:text-[#94a3b8]`}
+                    />
+                  </div>
                 )}
               </div>
             ))}
           </div>
 
-          <div className="mt-8">
+          <div className="mt-8 sm:max-w-xs">
             <TravelingBorderButton
               type="submit"
               disabled={submitting || !allFilled}

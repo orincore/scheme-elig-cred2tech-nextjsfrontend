@@ -4,10 +4,21 @@ import { useState } from 'react';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { MsmeAuthBrand } from '@/components/auth/msme-auth-brand';
+import { OnboardingLogoutButton } from '@/components/auth/onboarding-logout-button';
 import { UnderlineField, fieldLabelClass } from '@/components/ui/underline-field';
 import TravelingBorderButton from '@/components/ui/traveling-border-button';
 import { toast } from 'sonner';
 import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { consentApi } from '@/lib/services/api';
+
+// CICRA: the borrower must consent before any credit information is collected.
+// This is the exact wording stored in the consent ledger for audit evidence.
+const CONSENT_TEXT =
+  'I authorize Cred2Tech to collect, verify and process my business and credit ' +
+  'information for the purpose of assessing my eligibility for financial schemes. ' +
+  'I understand this consent is valid for 180 days, after which my credit ' +
+  'information will be purged unless I renew consent, and that I may withdraw it ' +
+  'at any time.';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
   AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
@@ -25,6 +36,11 @@ export default function PanVerificationPage() {
   const [email, setEmail] = useState('');
   const [businessType, setBusinessType] = useState('');
   const [state, setState] = useState('');
+
+  // CICRA consent gate — PAN verification collects credit information, which the
+  // backend blocks (403 CONSENT_REQUIRED) until a valid consent exists.
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [consentRecorded, setConsentRecorded] = useState(false);
 
   const [verifyingPan, setVerifyingPan] = useState(false);
   const [panVerified, setPanVerified] = useState(false);
@@ -44,10 +60,27 @@ export default function PanVerificationPage() {
       toast.error('User not authenticated');
       return;
     }
+    if (!consentChecked) {
+      setPanError('Please provide consent to collect your credit information before verifying.');
+      return;
+    }
 
     setPanError(null);
     setVerifyingPan(true);
     try {
+      // Record consent BEFORE collecting any credit data (CICRA). Idempotent
+      // enough for onboarding — we only call it once per flow. If it fails the
+      // backend would reject verify-pan anyway, so surface and stop.
+      if (!consentRecorded) {
+        const consentRes = await consentApi.grant(CONSENT_TEXT);
+        if (!consentRes?.success) {
+          setVerifyingPan(false);
+          setPanError('Could not record your consent. Please try again.');
+          return;
+        }
+        setConsentRecorded(true);
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/msme-auth/verify-pan`, {
         method: 'POST',
         headers: {
@@ -69,6 +102,15 @@ export default function PanVerificationPage() {
       });
 
       const data = await response.json();
+
+      // Defensive: backend rejected for missing/expired consent. Record consent
+      // and let the user retry (the checkbox is already ticked at this point).
+      if (response.status === 403 && data.error === 'CONSENT_REQUIRED') {
+        setConsentRecorded(false);
+        setVerifyingPan(false);
+        setPanError('Your consent could not be verified. Please ensure the consent box is ticked and try again.');
+        return;
+      }
 
       // PAN exists on another profile → ask the user to confirm, then retry.
       if (data.requiresPanConfirmation) {
@@ -150,6 +192,7 @@ export default function PanVerificationPage() {
   return (
     <AuthShell
       brand={<MsmeAuthBrand />}
+      headerSlot={<OnboardingLogoutButton />}
       contentClassName="flex-1 flex flex-col px-6 py-8 md:px-16 lg:px-24 md:py-16 justify-center max-w-2xl mx-auto w-full"
     >
       <div className="mb-10">
@@ -164,6 +207,22 @@ export default function PanVerificationPage() {
       </div>
 
       <div className="space-y-8">
+        {/* CICRA consent gate — must be ticked before PAN/credit data is collected */}
+        {!panVerified && (
+          <label className="flex items-start gap-3 rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/40 dark:bg-indigo-950/20 px-4 py-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={consentChecked}
+              onChange={(e) => { setConsentChecked(e.target.checked); setPanError(null); }}
+              disabled={verifyingPan}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-600 cursor-pointer"
+            />
+            <span className="text-[12.5px] leading-snug text-[#4a5d73] dark:text-[#94a3b8]">
+              {CONSENT_TEXT}
+            </span>
+          </label>
+        )}
+
         {/* PAN + verify */}
         <UnderlineField
           label="PAN"
@@ -180,7 +239,7 @@ export default function PanVerificationPage() {
               <button
                 type="button"
                 onClick={() => handlePanVerify()}
-                disabled={verifyingPan || pan.length !== 10}
+                disabled={verifyingPan || pan.length !== 10 || !consentChecked}
                 className="text-[13px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
               >
                 {verifyingPan ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify'}

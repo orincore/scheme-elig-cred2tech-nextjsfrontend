@@ -11,6 +11,8 @@ export interface AuthShellProps {
   children: React.ReactNode;
   /** Override the right-panel content container classes (width, padding, alignment). */
   contentClassName?: string;
+  /** Extra control rendered next to the theme toggle (e.g. an onboarding logout button). */
+  headerSlot?: React.ReactNode;
 }
 
 const DEFAULT_CONTENT =
@@ -22,7 +24,7 @@ const DEFAULT_CONTENT =
  * toggle and a mobile logo header. Reuse for any login / register / onboarding
  * screen — pass the brand panel content and the form as children.
  */
-export function AuthShell({ brand, children, contentClassName = DEFAULT_CONTENT }: AuthShellProps) {
+export function AuthShell({ brand, children, contentClassName = DEFAULT_CONTENT, headerSlot }: AuthShellProps) {
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-white dark:bg-[#0a1628] font-sans overflow-hidden">
       {/* Left brand panel */}
@@ -40,9 +42,13 @@ export function AuthShell({ brand, children, contentClassName = DEFAULT_CONTENT 
       <div className="flex-1 flex flex-col relative h-screen overflow-y-auto">
         <div className="flex md:hidden items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
           <BrandLogo size="large" />
-          <ThemeToggle />
+          <div className="flex items-center gap-4">
+            {headerSlot}
+            <ThemeToggle />
+          </div>
         </div>
-        <div className="hidden md:flex absolute top-6 right-6 z-50">
+        <div className="hidden md:flex absolute top-6 right-6 z-50 items-center gap-4">
+          {headerSlot}
           <ThemeToggle />
         </div>
         <div className={contentClassName}>{children}</div>

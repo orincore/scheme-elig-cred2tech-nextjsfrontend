@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
-  Sparkles, Lock, Loader2, ShieldCheck, CheckCircle2, Landmark, BadgePercent, Award,
+  Lock, Loader2, ShieldCheck, CheckCircle2, Landmark, BadgePercent, Award,
+  ScanSearch, FileSearch, BadgeCheck, Sparkles, PartyPopper,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -30,6 +30,68 @@ const FAKE_CARDS = [
   { name: 'Market Development Assistance Scheme', ministry: 'Ministry of Commerce', icon: BadgePercent, tag: 'Subsidy' },
   { name: 'National SC-ST Hub Scheme', ministry: 'Ministry of MSME', icon: Award, tag: 'Support' },
 ];
+
+/**
+ * Full-screen, one-shot celebration: tasteful sparkles raining from the top when
+ * the user discovers they're eligible. Pointer-events-none so it never blocks the
+ * paywall, auto-clears after a few seconds, and respects reduced-motion.
+ */
+function CelebrationOverlay() {
+  const [show, setShow] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShow(false), 4200);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!show) return null;
+
+  const COLORS = ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#3b82f6', '#f43f5e'];
+  const particles = Array.from({ length: 46 }).map((_, i) => ({
+    i,
+    left: Math.random() * 100,
+    delay: Math.random() * 1.3,
+    duration: 2.6 + Math.random() * 2.4,
+    size: 12 + Math.random() * 14,
+    color: COLORS[i % COLORS.length],
+  }));
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[60] overflow-hidden" aria-hidden>
+      {particles.map((p) => (
+        <Sparkles
+          key={p.i}
+          className="celebrate-fall absolute -top-12"
+          style={{
+            left: `${p.left}%`,
+            width: p.size,
+            height: p.size,
+            color: p.color,
+            animationDelay: `${p.delay}s`,
+            animationDuration: `${p.duration}s`,
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes celebrate-fall {
+          0%   { transform: translateY(-12vh) rotate(0deg);   opacity: 0; }
+          8%   { opacity: 1; }
+          100% { transform: translateY(112vh) rotate(360deg); opacity: 0; }
+        }
+        .celebrate-fall {
+          animation-name: celebrate-fall;
+          animation-timing-function: cubic-bezier(.37,.05,.5,.95);
+          animation-iteration-count: 1;
+          animation-fill-mode: both;
+          will-change: transform, opacity;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .celebrate-fall { display: none; }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 function loadRazorpay(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -211,71 +273,116 @@ export default function LockedSchemesTeaser({ onUnlocked }: { onUnlocked: () => 
         </p>
       </div>
 
-      {/* IDLE — call to analyse */}
+      {/* IDLE — call to analyse (flat SectionBox styling, matches /profile) */}
       {phase === 'idle' && (
-        <Card className="relative overflow-hidden border-indigo-200/70 dark:border-indigo-900/50 bg-linear-to-r from-indigo-50 via-white to-indigo-50/40 dark:from-indigo-950/40 dark:via-[#162048] dark:to-indigo-950/20 p-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30">
-            <Sparkles className="h-7 w-7" />
+        <div className="bg-card border border-border rounded-none overflow-hidden">
+          {/* Header bar — mirrors profile SectionBox */}
+          <div className="px-5 py-3.5 border-b border-border bg-background flex items-center gap-2">
+            <ScanSearch className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-[13px] font-bold text-foreground">Discover Eligible Schemes</h3>
           </div>
-          <h2 className="text-xl font-bold text-foreground">Discover the schemes you qualify for</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-            Our AI scans 100+ government schemes against your full business profile to
-            find every one you're eligible for.
-          </p>
-          <Button onClick={handleAnalyse} size="lg" className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white">
-            <Sparkles className="mr-2 h-4 w-4" /> Analyse My Schemes
-          </Button>
-        </Card>
+
+          <div className="px-5 py-6">
+            <h2 className="text-[17px] font-bold text-foreground">
+              Discover the schemes you qualify for
+            </h2>
+            <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
+              Our AI scans 100+ government schemes against your full business profile to
+              find every one you&apos;re eligible for.
+            </p>
+
+            {/* What you get — grounded icons, flat rows */}
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <div className="flex items-start gap-2.5">
+                <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div>
+                  <p className="text-[13px] font-semibold text-foreground">100+ schemes</p>
+                  <p className="text-[12px] text-muted-foreground">Central &amp; state government</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <FileSearch className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div>
+                  <p className="text-[13px] font-semibold text-foreground">Full profile match</p>
+                  <p className="text-[12px] text-muted-foreground">Checked against your business</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div>
+                  <p className="text-[13px] font-semibold text-foreground">Eligibility reasons</p>
+                  <p className="text-[12px] text-muted-foreground">Know exactly why you qualify</p>
+                </div>
+              </div>
+            </div>
+
+            <Button onClick={handleAnalyse} className="mt-6 rounded-none">
+              <ScanSearch className="mr-2 h-4 w-4" /> Analyse My Schemes
+            </Button>
+          </div>
+        </div>
       )}
 
-      {/* ANALYZING — live count, no scheme details */}
+      {/* ANALYZING — live count, no scheme details (flat SectionBox styling) */}
       {phase === 'analyzing' && (
-        <Card className="relative overflow-hidden p-6 border-primary/30 bg-primary/5">
-          <div className="flex items-center gap-3 mb-3">
-            <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0" />
-            <p className="text-sm font-medium text-foreground flex-1">
-              AI is matching government schemes against your full profile…
-            </p>
-            <span className="text-sm font-semibold text-primary tabular-nums">{count} eligible</span>
+        <div className="bg-card border border-border rounded-none overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border bg-background flex items-center gap-2">
+            <ScanSearch className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-[13px] font-bold text-foreground">Analysing Your Profile</h3>
           </div>
-          <Progress value={count > 0 ? Math.min(90, count * 8) : 6} className="h-1.5" />
-          <p className="text-xs text-muted-foreground mt-2">This usually takes under a minute.</p>
-        </Card>
+          <div className="px-5 py-5">
+            <div className="flex items-center gap-3 mb-3">
+              <Loader2 className="w-4 h-4 text-muted-foreground animate-spin shrink-0" />
+              <p className="text-sm text-foreground flex-1">
+                Matching government schemes against your full business profile…
+              </p>
+              <span className="text-sm font-semibold text-foreground tabular-nums">{count} eligible</span>
+            </div>
+            <Progress value={count > 0 ? Math.min(90, count * 8) : 6} className="h-1.5" />
+            <p className="text-xs text-muted-foreground mt-2">This usually takes under a minute.</p>
+          </div>
+        </div>
       )}
 
       {/* RESULT — count revealed, schemes blurred behind the paywall */}
       {phase === 'result' && (
         <>
-          <Card className="relative overflow-hidden rounded-2xl border border-emerald-200/70 dark:border-emerald-900/50 bg-linear-to-r from-emerald-50 via-white to-emerald-50/40 dark:from-emerald-950/40 dark:via-[#162048] dark:to-emerald-950/20 p-5 sm:p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-lg shadow-emerald-500/30">
-                <CheckCircle2 className="h-6 w-6" />
+          {/* One-shot celebration when eligibility is revealed */}
+          <CelebrationOverlay />
+
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <div className="px-5 py-4 flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-none border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30">
+                <PartyPopper className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div className="min-w-0">
-                <p className="text-[15px] sm:text-[17px] font-bold leading-snug text-foreground">
-                  Great news! You're eligible for{' '}
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-emerald-600 dark:text-emerald-400 mb-0.5">
+                  Congratulations
+                </p>
+                <p className="text-[15px] font-bold leading-snug text-foreground">
+                  You&apos;re eligible for{' '}
                   <span className="text-emerald-600 dark:text-emerald-400">{count}</span>{' '}
                   {count === 1 ? 'scheme' : 'schemes'}.
                 </p>
-                <p className="mt-1 text-[13px] text-muted-foreground">
+                <p className="mt-0.5 text-[13px] text-muted-foreground">
                   Unlock to see exactly which schemes, your match reasons and how to apply.
                 </p>
               </div>
             </div>
-          </Card>
+          </div>
 
           <div className="relative">
-            {/* Blurred fake results */}
+            {/* Blurred fake results — flat cards mirroring the real scheme cards */}
             <div className="grid md:grid-cols-2 gap-4 select-none pointer-events-none blur-[6px]" aria-hidden>
               {Array.from({ length: blurCount }).map((_, i) => {
                 const f = FAKE_CARDS[i % FAKE_CARDS.length];
                 const Icon = f.icon;
                 return (
-                  <Card key={i} className="p-5 pl-6 space-y-3 border-border/60">
+                  <div key={i} className="bg-card border border-border rounded-none p-5 space-y-3">
                     <div className="flex justify-between gap-3">
                       <p className="text-[15px] font-semibold text-foreground">{f.name}</p>
-                      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                        Eligible
+                      <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:ring-emerald-900">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Eligible
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -288,16 +395,16 @@ export default function LockedSchemesTeaser({ onUnlocked }: { onUnlocked: () => 
                     <p className="text-[13px] text-muted-foreground">
                       You meet the core eligibility criteria for this scheme based on your business profile.
                     </p>
-                  </Card>
+                  </div>
                 );
               })}
             </div>
 
-            {/* Paywall overlay */}
+            {/* Paywall overlay — flat card */}
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <Card className="w-full max-w-md border-indigo-200/70 dark:border-indigo-900/50 bg-card/95 backdrop-blur-sm shadow-2xl p-6 text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/50">
-                  <Lock className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+              <div className="w-full max-w-md bg-card border border-border rounded-none shadow-lg p-6 text-center">
+                <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-none border border-border bg-background">
+                  <Lock className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <h3 className="text-lg font-bold text-foreground">
                   Unlock your {count} {count === 1 ? 'scheme' : 'schemes'}
@@ -310,7 +417,7 @@ export default function LockedSchemesTeaser({ onUnlocked }: { onUnlocked: () => 
                   onClick={handleUnlock}
                   disabled={paying}
                   size="lg"
-                  className="mt-5 w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                  className="mt-5 w-full rounded-none"
                 >
                   {paying ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing…</>
@@ -319,10 +426,10 @@ export default function LockedSchemesTeaser({ onUnlocked }: { onUnlocked: () => 
                   )}
                 </Button>
                 <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-                  <ShieldCheck className="h-3.5 w-3.5 text-indigo-600" />
+                  <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
                   Secure one-time payment · Powered by Razorpay
                 </div>
-              </Card>
+              </div>
             </div>
           </div>
         </>

@@ -474,4 +474,18 @@ export const msmeAuthApi = {
     }).then((r) => r.json()),
 };
 
+// CICRA consent management — credit-data endpoints (PAN verify, eligibility,
+// refresh) are gated server-side and require a valid 180-day consent.
+export const consentApi = {
+  getStatus: () => fetchApi('/api/consent/status', {}, 'msme'),
+  grant: (consentText?: string) =>
+    fetchApi('/api/consent', {
+      method: 'POST',
+      body: JSON.stringify(consentText ? { consentText } : {}),
+    }, 'msme'),
+  withdraw: () =>
+    fetchApi('/api/consent/withdraw', { method: 'POST', body: '{}' }, 'msme'),
+  history: () => fetchApi('/api/consent/history', {}, 'msme'),
+};
+
 export { API_BASE_URL, getToken };

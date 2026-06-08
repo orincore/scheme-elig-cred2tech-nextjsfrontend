@@ -13,7 +13,7 @@ import {
   Pencil, Save, X, AlertCircle, ClipboardList, IndianRupee,
   Plus, Check, Loader2, ShieldCheck, ShieldOff, Lock,
 } from 'lucide-react';
-import { casesApi } from '@/lib/services/api';
+import { casesApi, consentApi } from '@/lib/services/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
@@ -170,6 +170,30 @@ export default function ProfilePage() {
   const [isSwitching, setIsSwitching] = useState(false);
   const [hasCases, setHasCases]       = useState(false);
 
+  // CICRA consent status (180-day validity) + withdrawal
+  const [consent, setConsent]             = useState<any>(null);
+  const [consentLoading, setConsentLoading] = useState(true);
+  const [withdrawing, setWithdrawing]     = useState(false);
+
+  const loadConsent = async () => {
+    try {
+      const res = await consentApi.getStatus();
+      setConsent(res);
+    } catch { /* non-fatal */ }
+    finally { setConsentLoading(false); }
+  };
+
+  const handleWithdrawConsent = async () => {
+    if (!confirm('Withdraw consent? Your credit information will no longer be accessible and will be scheduled for deletion. You will need to re-consent to use credit features again.')) return;
+    setWithdrawing(true);
+    try {
+      const res = await consentApi.withdraw();
+      if (res?.success) { toast.success('Consent withdrawn'); await loadConsent(); }
+      else toast.error('Could not withdraw consent');
+    } catch { toast.error('Could not withdraw consent'); }
+    finally { setWithdrawing(false); }
+  };
+
   useEffect(() => {
     if (!isInitialized) return;
     if (!token) router.push('/');
@@ -189,6 +213,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     loadProfile();
+    loadConsent();
     refreshBusinesses();
     // Check whether this user has any submitted cases — used to lock business removal
     if (userId) {
@@ -695,6 +720,46 @@ export default function ProfilePage() {
               </div>
             ))}
           </div>
+        </SectionBox>
+
+        {/* CICRA Data Consent — capture/withdraw + 180-day validity */}
+        <SectionBox
+          title="Data Consent"
+          icon={consent?.hasConsent ? ShieldCheck : ShieldOff}
+          actions={
+            consent?.hasConsent ? (
+              <button
+                onClick={handleWithdrawConsent}
+                disabled={withdrawing}
+                className="text-[11px] font-semibold text-red-600 dark:text-red-400 hover:underline disabled:opacity-50 flex items-center gap-1"
+              >
+                {withdrawing ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldOff className="h-3 w-3" />}
+                Withdraw
+              </button>
+            ) : undefined
+          }
+        >
+          {consentLoading ? (
+            <p className="text-sm text-muted-foreground py-1">Loading consent status…</p>
+          ) : consent?.hasConsent ? (
+            <div className="space-y-1.5 py-1">
+              <p className="text-sm text-green-600 dark:text-green-400 font-medium flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4" /> Active consent for credit information processing
+              </p>
+              <p className="text-[12px] text-muted-foreground">
+                Granted {consent.grantedAt ? new Date(consent.grantedAt).toLocaleDateString() : '—'} ·
+                Expires {consent.expiresAt ? new Date(consent.expiresAt).toLocaleDateString() : '—'}
+                {typeof consent.daysRemaining === 'number' && ` · ${consent.daysRemaining} days remaining`}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground py-1 flex items-center gap-2">
+              <ShieldOff className="h-4 w-4" />
+              {consent?.withdrawn
+                ? 'Consent withdrawn. Re-verify a PAN to grant consent again.'
+                : 'No active consent. Verify a PAN to provide consent for credit information processing.'}
+            </p>
+          )}
         </SectionBox>
 
       </div>

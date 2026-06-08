@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { MsmeAuthBrand } from '@/components/auth/msme-auth-brand';
+import { OnboardingLogoutButton } from '@/components/auth/onboarding-logout-button';
 import { fieldLabelClass } from '@/components/ui/underline-field';
 import TravelingBorderButton from '@/components/ui/traveling-border-button';
 import { toast } from 'sonner';
@@ -48,7 +49,7 @@ export default function OtpPage() {
   const loading = isLoading || state === 'loading';
 
   return (
-    <AuthShell brand={<MsmeAuthBrand />}>
+    <AuthShell brand={<MsmeAuthBrand />} headerSlot={<OnboardingLogoutButton />}>
       <div className="mb-10">
         <h1 className="text-[28px] md:text-[34px] font-bold text-[#0a1628] dark:text-[#e6edf7] tracking-tight mb-2">
           Verify OTP

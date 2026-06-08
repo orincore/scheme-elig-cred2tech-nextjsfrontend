@@ -118,7 +118,7 @@ export function AgentAuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('agent_token');
     setAgent(null);
     toast.success('Logged out successfully');
-    window.location.href = '/agent/login';
+    window.location.href = '/';
   }, []);
 
   const updateProfile = useCallback(async (data: Partial<Agent>): Promise<boolean> => {
