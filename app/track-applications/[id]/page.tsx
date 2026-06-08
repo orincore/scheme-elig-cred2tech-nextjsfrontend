@@ -129,6 +129,7 @@ interface DocumentRequest {
   fulfilled_at?: string;
   agent_name?: string;
   file_url?: string;
+  presigned_url?: string;
 }
 
 // ── Style helpers ─────────────────────────────────────────────────────────────
@@ -301,9 +302,31 @@ export default function MsmeCaseDetailPage() {
     if (authStep === 'authenticated') load();
   }, [authStep, userId, caseId]);
 
-  const openDocument = (doc: { file_url: string; file_name: string }) => {
-    setViewerUrl(`${API_BASE_URL}${doc.file_url}`);
-    setViewerName(doc.file_name);
+  const openDocument = async (opts: {
+    id?: string;
+    type?: 'doc' | 'req';
+    file_url: string;
+    file_name: string;
+    presigned_url?: string | null;
+  }) => {
+    let url: string | null = opts.presigned_url ?? null;
+
+    if (!url && opts.id && userId) {
+      try {
+        const res = opts.type === 'req'
+          ? await casesApi.getMsmeDocumentRequestUrl(opts.id, parseInt(userId))
+          : await casesApi.getMsmeDocumentUrl(caseId, opts.id, parseInt(userId));
+        url = res?.fileUrl ?? null;
+      } catch { /* fall through to error */ }
+    }
+
+    if (!url) {
+      toast.error('Document is temporarily unavailable. Please refresh and try again.');
+      return;
+    }
+
+    setViewerUrl(url);
+    setViewerName(opts.file_name);
   };
 
   // ── Upload ─────────────────────────────────────────────────────────────────
@@ -675,14 +698,14 @@ export default function MsmeCaseDetailPage() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
-                      onClick={() => openDocument(doc)}
+                      onClick={() => openDocument({ id: doc.id, type: 'doc', file_url: doc.file_url, file_name: doc.file_name, presigned_url: doc.presigned_url })}
                       className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
                     >
                       <Eye className="h-3 w-3" />
                       View
                     </button>
                     <a
-                      href={`${API_BASE_URL}${doc.file_url}`}
+                      href={doc.presigned_url || '#'}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-foreground bg-muted/30 hover:bg-muted/60 transition-colors"
@@ -770,7 +793,7 @@ export default function MsmeCaseDetailPage() {
                         )}
                         {req.status === 'UPLOADED' && req.file_url && (
                           <button
-                            onClick={() => openDocument({ file_url: req.file_url!, file_name: req.document_name })}
+                            onClick={() => openDocument({ id: req.id, type: 'req', file_url: req.file_url ?? '', file_name: req.document_name, presigned_url: req.presigned_url })}
                             className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-foreground bg-muted/30 hover:bg-muted/60 transition-colors"
                           >
                             <Eye className="h-3 w-3" />

@@ -49,6 +49,7 @@ import {
   Inbox,
 } from 'lucide-react';
 import Link from 'next/link';
+import { DocumentViewer } from '@/components/ui/document-viewer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ interface CaseDocument {
   file_type: string;
   file_size: number;
   file_url: string;
+  presigned_url?: string;
   document_tag: string;
   uploaded_at: string;
 }
@@ -146,6 +148,7 @@ interface DocumentRequest {
   requested_at: string;
   fulfilled_at?: string;
   file_url?: string;
+  presigned_url?: string;
   uploaded_file_name?: string;
 }
 
@@ -264,6 +267,10 @@ export default function CaseDetailPage() {
 
   // ── Request-document dialog ──────────────────────────────────────────────────
   const [reqDocOpen, setReqDocOpen]           = useState(false);
+
+  // ── Document viewer overlay ──────────────────────────────────────────────────
+  const [viewerUrl, setViewerUrl]   = useState<string | null>(null);
+  const [viewerName, setViewerName] = useState<string>('');
 
   // ── Fetch case details ───────────────────────────────────────────────────────
   const fetchCaseDetails = async (showSpinner = false) => {
@@ -394,6 +401,34 @@ export default function CaseDetailPage() {
     } finally {
       setLoggingContact(false);
     }
+  };
+
+  // ── Open document in viewer (images) or new tab (PDFs / others) ─────────────
+  const openDocument = async (opts: {
+    id?: string;
+    type?: 'doc' | 'req';
+    file_url: string;
+    file_name: string;
+    presigned_url?: string | null;
+  }) => {
+    let url: string | null = opts.presigned_url ?? null;
+
+    if (!url && opts.id) {
+      try {
+        const res = opts.type === 'req'
+          ? await casesApi.getDocumentRequestUrl(caseId, opts.id)
+          : await casesApi.getDocumentUrl(caseId, opts.id);
+        url = res?.fileUrl ?? null;
+      } catch { /* fall through to error */ }
+    }
+
+    if (!url) {
+      toast.error('Document is temporarily unavailable. Please refresh and try again.');
+      return;
+    }
+
+    setViewerUrl(url);
+    setViewerName(opts.file_name);
   };
 
   // ── Request documents (multiple) ─────────────────────────────────────────────
@@ -625,10 +660,10 @@ export default function CaseDetailPage() {
                         </p>
                       </div>
                       {doc.file_url && (
-                        <a href={`${API_BASE_URL}${doc.file_url}`} target="_blank" rel="noopener noreferrer"
+                        <button onClick={() => openDocument({ id: doc.id, type: 'doc', file_url: doc.file_url, file_name: doc.file_name, presigned_url: doc.presigned_url })}
                           className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors shrink-0">
                           <Download className="h-3 w-3" />Open
-                        </a>
+                        </button>
                       )}
                     </div>
                   ))}
@@ -674,11 +709,11 @@ export default function CaseDetailPage() {
                           {req.fulfilled_at && ` · Fulfilled ${new Date(req.fulfilled_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
                         </p>
                       </div>
-                      {req.status === 'UPLOADED' && req.file_url && (
-                        <a href={`${API_BASE_URL}${req.file_url}`} target="_blank" rel="noopener noreferrer"
+                      {req.status === 'UPLOADED' && (
+                        <button onClick={() => openDocument({ id: req.id, type: 'req', file_url: req.file_url ?? '', file_name: req.uploaded_file_name || req.document_name, presigned_url: req.presigned_url })}
                           className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors shrink-0">
                           <Download className="h-3 w-3" />View
-                        </a>
+                        </button>
                       )}
                     </div>
                   ))}
@@ -863,6 +898,14 @@ export default function CaseDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {viewerUrl && (
+        <DocumentViewer
+          fileUrl={viewerUrl}
+          fileName={viewerName}
+          onClose={() => { setViewerUrl(null); setViewerName(''); }}
+        />
+      )}
     </div>
   );
 }

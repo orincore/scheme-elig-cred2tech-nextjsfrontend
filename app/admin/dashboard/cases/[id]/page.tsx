@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RequestDocumentsDialog } from '@/components/cases/RequestDocumentsDialog';
+import { DocumentViewer } from '@/components/ui/document-viewer';
 import {
   Dialog,
   DialogContent,
@@ -85,6 +86,7 @@ interface CaseDocument {
   file_url: string;
   document_tag: string;
   uploaded_at: string;
+  presigned_url?: string;
 }
 
 interface DocumentRequest {
@@ -195,6 +197,31 @@ export default function AdminCaseDetailPage() {
   // ── Update-status dialog ────────────────────────────────────────────────────
   const [statusOpen, setStatusOpen] = useState(false);
   const [newStatus, setNewStatus] = useState('');
+
+  // ── Document viewer ────────────────────────────────────────────────────────
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerName, setViewerName] = useState<string>('');
+
+  const openDocument = async (opts: {
+    id: string;
+    file_url: string;
+    file_name: string;
+    presigned_url?: string | null;
+  }) => {
+    let url: string | null = opts.presigned_url ?? null;
+    if (!url) {
+      try {
+        const res = await casesApi.getAdminDocumentUrl(caseId, opts.id);
+        url = res?.fileUrl ?? null;
+      } catch { /* fall through */ }
+    }
+    if (!url) {
+      toast.error('Document is temporarily unavailable. Please refresh and try again.');
+      return;
+    }
+    setViewerUrl(url);
+    setViewerName(opts.file_name);
+  };
 
   // ── Notes dialog ───────────────────────────────────────────────────────────
   const [notesOpen, setNotesOpen] = useState(false);
@@ -563,7 +590,7 @@ export default function AdminCaseDetailPage() {
                         </div>
                       </div>
                       <button
-                        onClick={() => window.open(`${API_BASE_URL}${doc.file_url}`, '_blank')}
+                        onClick={() => openDocument({ id: doc.id, file_url: doc.file_url, file_name: doc.file_name, presigned_url: doc.presigned_url })}
                         className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
                       >
                         <Download className="h-3 w-3" />Open
@@ -773,6 +800,14 @@ export default function AdminCaseDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {viewerUrl && (
+        <DocumentViewer
+          fileUrl={viewerUrl}
+          fileName={viewerName}
+          onClose={() => { setViewerUrl(null); setViewerName(''); }}
+        />
+      )}
     </div>
   );
 }

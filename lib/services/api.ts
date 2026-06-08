@@ -375,6 +375,21 @@ export const casesApi = {
   getCaseDocuments: (caseId: string) =>
     fetchApi(`/api/cases/agent/${caseId}/documents`, {}, 'agent'),
 
+  getDocumentUrl: (caseId: string, documentId: string) =>
+    fetchApi(`/api/cases/agent/${caseId}/documents/${documentId}/url`, {}, 'agent'),
+
+  getDocumentRequestUrl: (caseId: string, requestId: string) =>
+    fetchApi(`/api/cases/agent/${caseId}/document-requests/${requestId}/url`, {}, 'agent'),
+
+  getMsmeDocumentUrl: (caseId: string, documentId: string, msmeUserId: number) =>
+    fetchApi(`/api/cases/msme/${caseId}/documents/${documentId}/url?msmeUserId=${msmeUserId}`, {}, 'msme'),
+
+  getMsmeDocumentRequestUrl: (requestId: string, msmeUserId: number) =>
+    fetchApi(`/api/cases/msme/document-requests/${requestId}/url?msmeUserId=${msmeUserId}`, {}, 'msme'),
+
+  getAdminDocumentUrl: (caseId: string, documentId: string) =>
+    fetchApi(`/api/cases/admin/${caseId}/documents/${documentId}/url`, {}, 'admin'),
+
   logContactMSME: (caseId: string, method: string, notes?: string) =>
     fetchApi(`/api/cases/agent/${caseId}/contact`, {
       method: 'PUT',

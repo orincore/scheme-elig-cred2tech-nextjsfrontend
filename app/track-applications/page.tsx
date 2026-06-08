@@ -28,8 +28,10 @@ import {
   Download,
   RefreshCw,
   Trash2,
+  Eye,
 } from 'lucide-react';
 import { casesApi, API_BASE_URL } from '@/lib/services/api';
+import { DocumentViewer } from '@/components/ui/document-viewer';
 
 interface Case {
   id: string;
@@ -63,6 +65,7 @@ interface DocumentRequest {
   agent_name?: string;
   file_url?: string;
   uploaded_file_name?: string;
+  presigned_url?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -130,6 +133,29 @@ export default function TrackApplicationsPage() {
   const [deleteOpen, setDeleteOpen]     = useState(false);
   const [caseToDelete, setCaseToDelete] = useState<Case | null>(null);
   const [deleting, setDeleting]         = useState(false);
+
+  const [viewerUrl, setViewerUrl]   = useState<string | null>(null);
+  const [viewerName, setViewerName] = useState<string>('');
+
+  const openDocument = async (opts: {
+    id: string;
+    file_name: string;
+    presigned_url?: string | null;
+  }) => {
+    let url: string | null = opts.presigned_url ?? null;
+    if (!url && userId) {
+      try {
+        const res = await casesApi.getMsmeDocumentRequestUrl(opts.id, parseInt(userId));
+        url = res?.fileUrl ?? null;
+      } catch { /* fall through */ }
+    }
+    if (!url) {
+      toast.error('Document is temporarily unavailable. Please refresh and try again.');
+      return;
+    }
+    setViewerUrl(url);
+    setViewerName(opts.file_name);
+  };
 
   useEffect(() => {
     const token = sessionStorage.getItem('msme_auth_token');
@@ -521,16 +547,14 @@ export default function TrackApplicationsPage() {
                             Upload
                           </button>
                         )}
-                        {req.status === 'UPLOADED' && req.file_url && (
-                          <a
-                            href={`${API_BASE_URL}${req.file_url}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        {req.status === 'UPLOADED' && (
+                          <button
+                            onClick={() => openDocument({ id: req.id, file_name: req.uploaded_file_name || req.document_name, presigned_url: req.presigned_url })}
                             className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-foreground bg-muted/30 hover:bg-muted/60 transition-colors"
                           >
-                            <Download className="h-3 w-3" />
+                            <Eye className="h-3 w-3" />
                             View File
-                          </a>
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -660,6 +684,13 @@ export default function TrackApplicationsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {viewerUrl && (
+        <DocumentViewer
+          fileUrl={viewerUrl}
+          fileName={viewerName}
+          onClose={() => { setViewerUrl(null); setViewerName(''); }}
+        />
+      )}
     </DashboardLayout>
   );
 }
