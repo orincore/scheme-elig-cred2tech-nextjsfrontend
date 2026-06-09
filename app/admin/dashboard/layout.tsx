@@ -23,6 +23,7 @@ import {
   X,
   ChevronUp,
   Building2,
+  DatabaseZap,
   type LucideIcon,
 } from 'lucide-react';
 interface NavItem {
@@ -81,6 +82,7 @@ export default function AdminDashboardLayout({
     { href: '/admin/dashboard/cases',           label: 'Cases',           icon: Briefcase },
     { href: '/admin/dashboard/msme-users',      label: 'MSME Users',      icon: Building2 },
     { href: '/admin/dashboard/ai-usage',        label: 'AI Usage & Cost', icon: DollarSign },
+    { href: '/admin/dashboard/scheme-ingestion', label: 'Scheme Ingestion', icon: DatabaseZap },
     { href: '/admin/dashboard/admins',          label: 'Admins',          icon: ShieldCheck,  superOnly: true },
     { href: '/admin/dashboard/audit',           label: 'Audit Log',       icon: ScrollText,   superOnly: true },
     { href: '/admin/dashboard/settings',        label: 'Settings',        icon: Settings },

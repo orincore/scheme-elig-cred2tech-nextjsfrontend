@@ -243,6 +243,27 @@ export const adminAuthApi = {
     return fetchApi(`/api/admin-auth/audit${query ? '?' + query : ''}`, {}, 'admin');
   },
 
+  // ── Scheme ingestion control (proxies to AI engine) ──
+  getSchemeIngestionStats: () =>
+    fetchApi('/api/admin/scheme-ingestion/scheme-stats', {}, 'admin'),
+
+  getIngestionStatus: () =>
+    fetchApi('/api/admin/scheme-ingestion/status', {}, 'admin'),
+
+  getIngestionRuns: (params?: { limit?: number; source?: string }) => {
+    const clean = Object.entries(params || {})
+      .filter(([, v]) => v !== undefined && v !== '' && v !== null)
+      .map(([k, v]) => [k, String(v)]) as [string, string][];
+    const query = new URLSearchParams(clean).toString();
+    return fetchApi(`/api/admin/scheme-ingestion/runs${query ? '?' + query : ''}`, {}, 'admin');
+  },
+
+  runIngestion: (source: 'emsme' | 'myscheme', force = false) =>
+    fetchApi('/api/admin/scheme-ingestion/run', {
+      method: 'POST',
+      body: JSON.stringify({ source, force }),
+    }, 'admin'),
+
   // ── MSME User management (read-only) ──
   listMsmeUsers: (params?: { search?: string; page?: number; pageSize?: number }) => {
     const clean = Object.entries(params || {})
