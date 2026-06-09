@@ -549,12 +549,21 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       });
       const data = await res.json();
       if (data.success) {
-        setBusinesses(data.businesses || []);
-        const active = data.activeBusinessId ?? data.businesses?.[0]?.id ?? null;
-        if (active != null) {
-          setActiveBusinessId(Number(active));
-          sessionStorage.setItem('msme_active_business', String(active));
-        }
+        const list = data.businesses || [];
+        setBusinesses(list);
+        const ids = list.map((b: BusinessProfile) => Number(b.id));
+        const serverActive = data.activeBusinessId != null ? Number(data.activeBusinessId) : null;
+        // Preserve the user's current selection if it's still a valid business —
+        // otherwise a refresh (e.g. triggered right after switching) would clobber
+        // the just-made choice with a cached/stale server value. Only (re)initialise
+        // when there is no valid local selection.
+        setActiveBusinessId((prev) => {
+          const next = (prev != null && ids.includes(prev))
+            ? prev
+            : (serverActive != null && ids.includes(serverActive) ? serverActive : (ids[0] ?? null));
+          if (next != null) sessionStorage.setItem('msme_active_business', String(next));
+          return next;
+        });
       }
     } catch {
       /* non-fatal */

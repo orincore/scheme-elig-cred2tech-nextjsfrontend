@@ -11,14 +11,14 @@ import { toast } from 'sonner';
 import { Check, ChevronLeft } from 'lucide-react';
 
 export default function OtpPage() {
-  const { mobile, verifyOtp, isLoading, error } = useMsmeAuth();
+  const { mobile, verifyOtp, sendOtp, isLoading, error } = useMsmeAuth();
   const [otp, setOtp] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'success'>('idle');
   const [resendTimer, setResendTimer] = useState(0);
 
   const handleVerifyOtp = async () => {
-    if (!otp || otp.length !== 4) {
-      toast.error('Please enter a valid 4-digit OTP');
+    if (!otp || otp.length !== 6) {
+      toast.error('Please enter a valid 6-digit OTP');
       return;
     }
     setState('loading');
@@ -32,18 +32,26 @@ export default function OtpPage() {
     }
   };
 
-  const handleResendOtp = () => {
-    toast.success('OTP resent to your mobile number');
-    setResendTimer(30);
+  const startResendCountdown = (seconds: number) => {
+    setResendTimer(seconds);
     const timer = setInterval(() => {
       setResendTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
+        if (prev <= 1) { clearInterval(timer); return 0; }
         return prev - 1;
       });
     }, 1000);
+  };
+
+  const handleResendOtp = async () => {
+    if (!mobile || resendTimer > 0) return;
+    // Actually re-send via the backend (respects the 60s per-mobile cooldown).
+    const ok = await sendOtp(mobile);
+    if (ok) {
+      toast.success('OTP resent to your mobile number');
+      startResendCountdown(60);
+    } else {
+      toast.error(error || 'Could not resend OTP. Please wait a moment and try again.');
+    }
   };
 
   const loading = isLoading || state === 'loading';
@@ -55,7 +63,7 @@ export default function OtpPage() {
           Verify OTP
         </h1>
         <p className="text-[#4a5d73] dark:text-[#94a3b8] text-[14px] md:text-[15px]">
-          We&apos;ve sent a 4-digit code to{' '}
+          We&apos;ve sent a 6-digit code to{' '}
           <span className="font-semibold text-[#0a1628] dark:text-[#e6edf7]">+91 {mobile}</span>
         </p>
       </div>
@@ -66,8 +74,8 @@ export default function OtpPage() {
           <input
             type="text"
             inputMode="numeric"
-            placeholder="••••"
-            maxLength={4}
+            placeholder="••••••"
+            maxLength={6}
             value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/[^\d]/g, ''))}
             onKeyDown={(e) => e.key === 'Enter' && handleVerifyOtp()}
@@ -80,7 +88,7 @@ export default function OtpPage() {
 
       <TravelingBorderButton
         onClick={handleVerifyOtp}
-        disabled={loading || otp.length !== 4}
+        disabled={loading || otp.length !== 6}
         className="w-full py-3.5 text-[15px] rounded-[10px]"
         showIcon={state === 'idle'}
       >

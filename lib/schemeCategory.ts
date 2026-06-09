@@ -41,3 +41,22 @@ export function categorizeScheme(scheme: any): SchemeCategory {
   }
   return OTHER;
 }
+
+// A DB-driven category (admin-managed) used by the dashboard.
+export interface DbCategory { key: string; label: string; icon?: string | null; color?: string | null; order?: number }
+
+/**
+ * Resolve the display category for a scheme:
+ *   1. the admin-assigned `scheme.displayCategory` if it exists in the DB list,
+ *   2. else fall back to keyword auto-classification (categorizeScheme).
+ * Pass the categories fetched from /api/categories; if empty, behaves exactly
+ * like before (pure keyword classification) — so the dashboard never regresses.
+ */
+export function resolveCategory(scheme: any, categories: DbCategory[] = []): SchemeCategory {
+  const key = scheme?.displayCategory;
+  if (key) {
+    const hit = categories.find((c) => c.key === key);
+    if (hit) return { key: hit.key, label: hit.label };
+  }
+  return categorizeScheme(scheme);
+}

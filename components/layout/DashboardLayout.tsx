@@ -3,6 +3,7 @@
 import { ReactNode, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import PageTransition from '@/components/ui/page-transition';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { BrandLogo } from '@/components/brand-logo';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -260,7 +261,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         {/* Page content */}
         <main className="flex-1">
-          <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">{children}</div>
+          <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+            <PageTransition>{children}</PageTransition>
+          </div>
         </main>
       </div>
 

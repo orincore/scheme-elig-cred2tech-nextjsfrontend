@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { BrandLogo } from '@/components/brand-logo';
+import PageTransition from '@/components/ui/page-transition';
 
 export interface AuthShellProps {
   /** Content of the indigo brand panel, rendered under the white logo. */
@@ -51,7 +52,7 @@ export function AuthShell({ brand, children, contentClassName = DEFAULT_CONTENT,
           {headerSlot}
           <ThemeToggle />
         </div>
-        <div className={contentClassName}>{children}</div>
+        <div className={contentClassName}><PageTransition>{children}</PageTransition></div>
       </div>
     </div>
   );

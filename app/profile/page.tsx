@@ -184,7 +184,7 @@ export default function ProfilePage() {
   };
 
   const handleWithdrawConsent = async () => {
-    if (!confirm('Withdraw consent? Your credit information will no longer be accessible and will be scheduled for deletion. You will need to re-consent to use credit features again.')) return;
+    if (!confirm('Withdraw PAN consent? We will stop using your PAN for scheme matching until you consent again. You can re-consent any time by verifying a PAN.')) return;
     setWithdrawing(true);
     try {
       const res = await consentApi.withdraw();
@@ -221,8 +221,11 @@ export default function ProfilePage() {
         .then(res => { if (res.success && (res.cases?.length ?? 0) > 0) setHasCases(true); })
         .catch(() => {});
     }
+    // Depend on primitives only — `userProfile` is a fresh object each render, so
+    // depending on it re-fires this effect forever (loadProfile/businesses flood).
+    // userId (primitive) still triggers the cases check once it's available.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, userProfile, mobile]);
+  }, [token, mobile, userId]);
 
   const handleSwitchBusiness = async (id: number) => {
     if (id === activeBusinessId) return;
@@ -722,9 +725,9 @@ export default function ProfilePage() {
           </div>
         </SectionBox>
 
-        {/* CICRA Data Consent — capture/withdraw + 180-day validity */}
+        {/* PAN consent — capture/withdraw. Does not expire; no data purge. */}
         <SectionBox
-          title="Data Consent"
+          title="PAN Consent"
           icon={consent?.hasConsent ? ShieldCheck : ShieldOff}
           actions={
             consent?.hasConsent ? (
@@ -744,20 +747,18 @@ export default function ProfilePage() {
           ) : consent?.hasConsent ? (
             <div className="space-y-1.5 py-1">
               <p className="text-sm text-green-600 dark:text-green-400 font-medium flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4" /> Active consent for credit information processing
+                <ShieldCheck className="h-4 w-4" /> Active consent to use your PAN number
               </p>
               <p className="text-[12px] text-muted-foreground">
-                Granted {consent.grantedAt ? new Date(consent.grantedAt).toLocaleDateString() : '—'} ·
-                Expires {consent.expiresAt ? new Date(consent.expiresAt).toLocaleDateString() : '—'}
-                {typeof consent.daysRemaining === 'number' && ` · ${consent.daysRemaining} days remaining`}
+                Granted {consent.grantedAt ? new Date(consent.grantedAt).toLocaleDateString() : '—'} · Valid until withdrawn
               </p>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground py-1 flex items-center gap-2">
               <ShieldOff className="h-4 w-4" />
               {consent?.withdrawn
-                ? 'Consent withdrawn. Re-verify a PAN to grant consent again.'
-                : 'No active consent. Verify a PAN to provide consent for credit information processing.'}
+                ? 'PAN consent withdrawn. Verify a PAN to grant consent again.'
+                : 'No PAN consent yet. Verify a PAN to consent to using your PAN number.'}
             </p>
           )}
         </SectionBox>

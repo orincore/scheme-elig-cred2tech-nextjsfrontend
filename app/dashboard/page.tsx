@@ -45,7 +45,13 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!allowed) return;
     refreshBusinesses().finally(checkLocked);
-  }, [allowed, checkLocked, refreshBusinesses]);
+    // Depend on primitives only. `refreshBusinesses`/`checkLocked` are recreated
+    // every render, and calling them updates context state → re-render → new
+    // function identities → this effect would re-fire forever (the businesses +
+    // results request flood). Re-run only when access is granted or the active
+    // business changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowed, activeBusinessId]);
 
   // Only load real (streaming) scheme data once the business is unlocked.
   useEffect(() => {
@@ -77,7 +83,11 @@ export default function DashboardPage() {
       } catch {}
     };
     checkProfile();
-  }, [allowed, locked, token, mobile, userProfile]);
+    // `userProfile` is a new object reference each render → depending on it loops
+    // (the profile/:mobile request flood). The mobile primitive is enough to
+    // trigger; userProfile is read from the latest closure inside checkProfile.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowed, locked, token, mobile]);
 
   // Called after a successful unlock payment: flip to unlocked + load real data.
   const handleUnlocked = useCallback(() => {

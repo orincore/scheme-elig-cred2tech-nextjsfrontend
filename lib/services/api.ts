@@ -11,8 +11,6 @@ const getToken = (type: 'agent' | 'admin' | 'msme') => {
   }
   
   const token = localStorage.getItem(`${type}_token`);
-  console.log(`Retrieved ${type}_token:`, token ? `exists (length: ${token.length})` : 'not found');
-  console.log(`Token preview:`, token ? `${token.substring(0, 20)}...` : 'none');
   return token;
 };
 
@@ -264,6 +262,35 @@ export const adminAuthApi = {
       body: JSON.stringify({ source, force }),
     }, 'admin'),
 
+  // ── Scheme catalogue: categories (admin CRUD) ──
+  listCategories: () => fetchApi('/api/admin/categories', {}, 'admin'),
+  createCategory: (data: { label: string; key?: string; icon?: string; color?: string; order?: number; isActive?: boolean }) =>
+    fetchApi('/api/admin/categories', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
+  updateCategory: (id: string, data: any) =>
+    fetchApi(`/api/admin/categories/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, 'admin'),
+  deleteCategory: (id: string) =>
+    fetchApi(`/api/admin/categories/${id}`, { method: 'DELETE' }, 'admin'),
+  reorderCategories: (order: string[]) =>
+    fetchApi('/api/admin/categories/reorder', { method: 'PATCH', body: JSON.stringify({ order }) }, 'admin'),
+
+  // ── Scheme catalogue: schemes (admin CRUD) ──
+  listAdminSchemes: (params?: { search?: string; source?: string; category?: string; level?: string; page?: number; limit?: number }) => {
+    const clean = Object.entries(params || {})
+      .filter(([, v]) => v !== undefined && v !== '' && v !== null)
+      .map(([k, v]) => [k, String(v)]) as [string, string][];
+    const query = new URLSearchParams(clean).toString();
+    return fetchApi(`/api/admin/schemes${query ? '?' + query : ''}`, {}, 'admin');
+  },
+  getAdminScheme: (id: string) => fetchApi(`/api/admin/schemes/${id}`, {}, 'admin'),
+  createScheme: (data: any) => fetchApi('/api/admin/schemes', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
+  updateScheme: (id: string, data: any) => fetchApi(`/api/admin/schemes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, 'admin'),
+  deleteScheme: (id: string) => fetchApi(`/api/admin/schemes/${id}`, { method: 'DELETE' }, 'admin'),
+
+  // ── Payment pricing management ──
+  listPricing: () => fetchApi('/api/admin/pricing', {}, 'admin'),
+  updatePricing: (serviceType: string, data: { amount?: number; currency?: string; isActive?: boolean }) =>
+    fetchApi(`/api/admin/pricing/${serviceType}`, { method: 'PATCH', body: JSON.stringify(data) }, 'admin'),
+
   // ── MSME User management (read-only) ──
   listMsmeUsers: (params?: { search?: string; page?: number; pageSize?: number }) => {
     const clean = Object.entries(params || {})
@@ -494,6 +521,11 @@ export const msmeAuthApi = {
       body: JSON.stringify({ schemes, pdfBase64 }),
     }).then((r) => r.json()),
 };
+
+// Public, read-only display categories (admin-curated) for the dashboard buckets.
+// No auth. Returns { success, categories: [{key,label,icon,color,order}] }.
+export const getPublicCategories = () =>
+  fetch(`${API_BASE_URL}/api/categories`).then((r) => r.json()).catch(() => ({ success: false, categories: [] }));
 
 // CICRA consent management — credit-data endpoints (PAN verify, eligibility,
 // refresh) are gated server-side and require a valid 180-day consent.

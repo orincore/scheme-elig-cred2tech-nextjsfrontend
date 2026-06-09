@@ -9,6 +9,7 @@ import { BrandLogo } from '@/components/brand-logo';
 import { Button } from '@/components/ui/button';
 import { LogoutConfirmDialog } from '@/components/ui/logout-confirm-dialog';
 import ForcedPasswordChange from '@/components/admin/forced-password-change';
+import PageTransition from '@/components/ui/page-transition';
 import {
   LayoutDashboard,
   Users,
@@ -24,6 +25,9 @@ import {
   ChevronUp,
   Building2,
   DatabaseZap,
+  FileText,
+  FolderTree,
+  IndianRupee,
   type LucideIcon,
 } from 'lucide-react';
 interface NavItem {
@@ -83,6 +87,9 @@ export default function AdminDashboardLayout({
     { href: '/admin/dashboard/msme-users',      label: 'MSME Users',      icon: Building2 },
     { href: '/admin/dashboard/ai-usage',        label: 'AI Usage & Cost', icon: DollarSign },
     { href: '/admin/dashboard/scheme-ingestion', label: 'Scheme Ingestion', icon: DatabaseZap },
+    { href: '/admin/dashboard/schemes',          label: 'Schemes',          icon: FileText },
+    { href: '/admin/dashboard/categories',       label: 'Categories',       icon: FolderTree },
+    { href: '/admin/dashboard/pricing',          label: 'Pricing',          icon: IndianRupee },
     { href: '/admin/dashboard/admins',          label: 'Admins',          icon: ShieldCheck,  superOnly: true },
     { href: '/admin/dashboard/audit',           label: 'Audit Log',       icon: ScrollText,   superOnly: true },
     { href: '/admin/dashboard/settings',        label: 'Settings',        icon: Settings },
@@ -226,7 +233,9 @@ export default function AdminDashboardLayout({
 
         {/* Page content */}
         <main className="flex-1">
-          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            <PageTransition>{children}</PageTransition>
+          </div>
         </main>
       </div>
 

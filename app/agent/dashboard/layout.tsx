@@ -9,6 +9,7 @@ import { agentAuthApi } from '@/lib/services/api';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { BrandLogo } from '@/components/brand-logo';
 import { LogoutConfirmDialog } from '@/components/ui/logout-confirm-dialog';
+import PageTransition from '@/components/ui/page-transition';
 import { toast } from 'sonner';
 import {
   LayoutDashboard,
@@ -293,7 +294,9 @@ export default function AgentDashboardLayout({
 
         {/* Page content */}
         <main className="flex-1">
-          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            <PageTransition>{children}</PageTransition>
+          </div>
         </main>
       </div>
 

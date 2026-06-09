@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSchemes, SchemeDecisionItem } from '@/contexts/SchemesContext';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { getOwnedDocs, OwnedDocs } from '@/lib/documentMatch';
-import { categorizeScheme, CATEGORY_ORDER } from '@/lib/schemeCategory';
+import { resolveCategory, CATEGORY_ORDER, type DbCategory } from '@/lib/schemeCategory';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import SchemeDecisionCard from './SchemeDecisionCard';
 import QuestionsModal from './QuestionsModal';
 import { generateEligibilityReport, generateEligibilityReportBytes, ReportScheme } from '@/lib/generateEligibilityReport';
-import { msmeAuthApi } from '@/lib/services/api';
+import { msmeAuthApi, getPublicCategories } from '@/lib/services/api';
 import {
   RefreshCw, CheckCircle2, HelpCircle, XCircle, Search, Loader2, Target, AlertTriangle,
   LayoutGrid, Landmark, Sprout, TrendingUp, BadgePercent, Award, ReceiptText,
@@ -329,19 +329,42 @@ export default function EligibilityDashboard() {
   const fIneligible = useMemo(() => filterItems(ineligibleItems, query), [ineligibleItems, query]);
   const fActionable = useMemo(() => filterItems(actionableItems, query), [actionableItems, query]);
 
-  // Group eligible schemes into benefit-type categories (loans, grants, awards…)
+  // Admin-managed display categories (DB-driven). Empty until fetched → falls back
+  // to pure keyword classification, so there is never a regression.
+  const [dbCategories, setDbCategories] = useState<DbCategory[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getPublicCategories()
+      .then((res: any) => { if (alive && res?.success) setDbCategories(res.categories || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Group eligible schemes into benefit-type categories (loans, grants, awards…).
+  // Uses each scheme's admin-assigned category when set, else auto-classifies.
   const [eligCat, setEligCat] = useState<string>('all');
   const eligibleGroups = useMemo(() => {
     const groups: Record<string, { label: string; items: SchemeDecisionItem[] }> = {};
     for (const item of fEligible) {
-      const cat = categorizeScheme(item.scheme);
+      const cat = resolveCategory(item.scheme, dbCategories);
       if (!groups[cat.key]) groups[cat.key] = { label: cat.label, items: [] };
       groups[cat.key].items.push(item);
     }
-    return CATEGORY_ORDER
-      .filter((k) => groups[k]?.items.length)
-      .map((k) => ({ key: k, label: groups[k].label, items: groups[k].items }));
-  }, [fEligible]);
+    // Order by the admin-defined category order first, then any leftover
+    // (auto-classified) keys in the legacy static order, then anything else.
+    const dbOrder = dbCategories.map((c) => c.key);
+    const orderedKeys = [...dbOrder, ...CATEGORY_ORDER.filter((k) => !dbOrder.includes(k))];
+    const seen = new Set<string>();
+    const result: { key: string; label: string; items: SchemeDecisionItem[] }[] = [];
+    for (const k of orderedKeys) {
+      if (groups[k]?.items.length && !seen.has(k)) { seen.add(k); result.push({ key: k, label: groups[k].label, items: groups[k].items }); }
+    }
+    // Include any group whose key wasn't in either order list.
+    for (const k of Object.keys(groups)) {
+      if (!seen.has(k) && groups[k].items.length) { seen.add(k); result.push({ key: k, label: groups[k].label, items: groups[k].items }); }
+    }
+    return result;
+  }, [fEligible, dbCategories]);
 
   const visibleGroups = eligCat === 'all' ? eligibleGroups : eligibleGroups.filter((g) => g.key === eligCat);
 
