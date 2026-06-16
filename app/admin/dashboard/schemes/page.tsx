@@ -16,6 +16,9 @@ interface SchemeRow {
 interface Category { _id: string; key: string; label: string; }
 
 const SOURCES = ['', 'myscheme', 'emsme', 'curated'];
+// Human-readable source labels (the real portal names are hidden behind these).
+const SOURCE_LABELS: Record<string, string> = { emsme: 'Source 1', myscheme: 'Source 2', curated: 'Curated' };
+const srcLabel = (s?: string | null) => (s ? SOURCE_LABELS[s] || s : s);
 
 function Section({ title, icon: Icon, action, children }: { title: React.ReactNode; icon: React.ElementType; action?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -225,7 +228,7 @@ export default function AdminSchemesPage() {
               <h2 className="text-base font-bold text-foreground">{form.schemeName}</h2>
               {form.schemeShortTitle && <p className="text-sm text-muted-foreground">{form.schemeShortTitle}</p>}
               <div className="flex flex-wrap gap-1.5 pt-1">
-                <span className="text-[11px] px-2 py-0.5 bg-muted rounded-none">source: {form.source || 'myscheme'}</span>
+                <span className="text-[11px] px-2 py-0.5 bg-muted rounded-none">source: {srcLabel(form.source) || 'Source 2'}</span>
                 {form.level && <span className="text-[11px] px-2 py-0.5 bg-muted rounded-none">{form.level}{form.state ? ` · ${form.state}` : ''}</span>}
                 {form.schemeFor && <span className="text-[11px] px-2 py-0.5 bg-muted rounded-none">{form.schemeFor}</span>}
                 {form.benefitTypes && <span className="text-[11px] px-2 py-0.5 bg-muted rounded-none">{form.benefitTypes}</span>}
@@ -379,7 +382,7 @@ export default function AdminSchemesPage() {
               onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load(1)} />
           </div>
           <select className="border border-border bg-background px-3 py-2 text-sm" value={source} onChange={(e) => setSource(e.target.value)}>
-            {SOURCES.map((s) => <option key={s} value={s}>{s ? s : 'All sources'}</option>)}
+            {SOURCES.map((s) => <option key={s} value={s}>{s ? srcLabel(s) : 'All sources'}</option>)}
           </select>
           <select className="border border-border bg-background px-3 py-2 text-sm" value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>
@@ -405,7 +408,7 @@ export default function AdminSchemesPage() {
                       <div className="font-medium text-foreground">{r.schemeName}</div>
                       <div className="text-xs text-muted-foreground">{r.schemeShortTitle || r.slug}</div>
                     </td>
-                    <td className="py-2.5 pr-4"><span className="text-xs px-2 py-0.5 bg-muted rounded-none">{r.source || 'myscheme'}</span></td>
+                    <td className="py-2.5 pr-4"><span className="text-xs px-2 py-0.5 bg-muted rounded-none">{srcLabel(r.source) || 'Source 2'}</span></td>
                     <td className="py-2.5 pr-4 text-muted-foreground">{r.level}{r.state ? ` · ${r.state}` : ''}</td>
                     <td className="py-2.5 pr-4">
                       <select className="border border-border bg-background px-2 py-1 text-xs max-w-[180px]" value={r.displayCategory || ''} onChange={(e) => assignCategory(r._id, e.target.value)}>

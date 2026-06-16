@@ -189,10 +189,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       {/* User card */}
       <div className="flex items-center gap-3 border-t border-border px-4 py-4">
         <Link href="/profile" className="flex min-w-0 flex-1 items-center gap-3" onClick={() => setMobileOpen(false)}>
-          <UserAvatar name={userProfile?.name} mobile={userProfile?.mobile} gender={gender} />
+          <UserAvatar name={userProfile?.personalName || userProfile?.name} mobile={userProfile?.mobile} gender={gender} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-bold leading-tight text-foreground">
-              {userProfile?.name || 'Your account'}
+              {userProfile?.personalName || userProfile?.name || 'Your account'}
             </p>
             <p className="truncate text-[11px] text-muted-foreground">
               {userProfile?.email || userProfile?.mobile || 'View profile'}

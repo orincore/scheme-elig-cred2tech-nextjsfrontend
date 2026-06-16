@@ -196,6 +196,101 @@ export const REQUIRED_SEARCH_FIELDS: MissingField[] = [
   },
 ];
 
+// Business identity / address fields normally auto-filled from the GST API.
+// Collected manually only for no-GSTIN profiles. Keys map directly to the
+// /profile/eligibility DB payload (camelCase), except `establishmentYear`
+// which is converted to yearsInOperation + registrationDate on submit.
+// `auto` fields are populated from a pincode lookup (City/District/State) — the
+// user normally won't type them, but they stay editable.
+export const BUSINESS_IDENTITY_FIELDS: { key: string; label: string; type: 'text' | 'number'; optional?: boolean; auto?: boolean }[] = [
+  { key: 'legalNameOfBusiness', label: 'Business / Legal Name', type: 'text' },
+  { key: 'tradeNameOfBusiness', label: 'Trade Name', type: 'text', optional: true },
+  { key: 'principalAddress',    label: 'Address Line', type: 'text' },
+  { key: 'principalPincode',    label: 'Pincode', type: 'text' },
+  { key: 'principalCity',       label: 'City', type: 'text', auto: true },
+  { key: 'principalDistrict',   label: 'District', type: 'text', auto: true },
+  { key: 'principalState',      label: 'State', type: 'text', auto: true },
+  { key: 'establishmentYear',   label: 'Year Established', type: 'number', optional: true },
+];
+
+/** Extract a 4-digit year from a DOB / registration date (ISO or DD/MM/YYYY). */
+function yearFrom(value: any): string | undefined {
+  const m = typeof value === 'string' ? value.match(/(\d{4})/) : null;
+  return m ? m[1] : undefined;
+}
+
+/** Map for reading an existing value out of a fetched profile (so we prefill). */
+export const IDENTITY_SOURCE_MAP: Record<string, (p: Record<string, any>) => any> = {
+  // Default the legal name to the PAN holder's name (proprietor) when no
+  // GST-derived business name exists.
+  legalNameOfBusiness: (p) => p.legalNameOfBusiness || p.legal_name_of_business || p.personalName || p.personal_name,
+  tradeNameOfBusiness: (p) => p.tradeNameOfBusiness || p.trade_name_of_business,
+  principalAddress:    (p) => p.principalAddress || p.principal_address,
+  principalCity:       (p) => p.principalCity || p.principal_city,
+  principalDistrict:   (p) => p.principalDistrict || p.principal_district,
+  principalState:      (p) => p.principalState || p.principal_state || p.state,
+  principalPincode:    (p) => p.principalPincode || p.principal_pincode,
+  // Year established defaults to the year from the registration date, else from
+  // the PAN holder's date of birth (per product requirement) — editable.
+  establishmentYear:   (p) =>
+    yearFrom(p.registrationDate || p.registration_date) || yearFrom(p.dob),
+};
+
+/**
+ * Look up City / District / State for an Indian 6-digit pincode using the public
+ * India Post API. Returns null on miss / network error (caller keeps fields blank).
+ */
+export async function lookupPincode(
+  pincode: string,
+): Promise<{ city: string; district: string; state: string } | null> {
+  try {
+    const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+    const data = await res.json();
+    const po = data?.[0]?.PostOffice?.[0];
+    if (!po) return null;
+    return {
+      city: po.Block && po.Block !== 'NA' ? po.Block : po.District || po.Name || '',
+      district: po.District || '',
+      state: po.State || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when the active business has no GST profile, so the GST-derived identity
+ * and address fields must be entered manually.
+ */
+export function isManualBusiness(profile: Record<string, any>): boolean {
+  const gstin = profile.gstin || profile.gstinNumber;
+  const panVerified = profile.panVerified ?? profile.pan_verified ?? !!profile.panNumber;
+  return !!panVerified && !gstin;
+}
+
+/**
+ * Translate the manually-entered business-identity answers into the DB payload
+ * keys expected by POST /api/msme-auth/profile/eligibility. `establishmentYear`
+ * becomes yearsInOperation + a normalised registrationDate.
+ */
+export function buildBusinessIdentityPayload(values: Record<string, any>): Record<string, any> {
+  const payload: Record<string, any> = {};
+  for (const [key, raw] of Object.entries(values)) {
+    const val = (raw ?? '').toString().trim();
+    if (!val) continue;
+    if (key === 'establishmentYear') {
+      const year = parseInt(val, 10);
+      if (!isNaN(year) && year > 1900 && year <= new Date().getFullYear()) {
+        payload['registrationDate'] = `01/01/${year}`;
+        payload['yearsInOperation'] = new Date().getFullYear() - year;
+      }
+    } else {
+      payload[key] = val;
+    }
+  }
+  return payload;
+}
+
 export const SECTOR_NORMALISE_MAP: Record<string, string> = {
   manufacturing: 'manufacturing', agro: 'agro', textile: 'textile', handicraft: 'handicraft',
   fisheries: 'fisheries', technology: 'technology', construction: 'construction', retail: 'retail',

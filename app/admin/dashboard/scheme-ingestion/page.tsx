@@ -11,7 +11,7 @@ import {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const int = (n: any) => (Number(n) || 0).toLocaleString('en-IN');
-const SOURCE_LABEL: Record<string, string> = { emsme: 'eMSME (Saarthi)', myscheme: 'myScheme.gov.in' };
+const SOURCE_LABEL: Record<string, string> = { emsme: 'Source 1', myscheme: 'Source 2' };
 const sourceLabel = (s: string) => SOURCE_LABEL[s] || s;
 
 const dt = (s?: string | null) => {
@@ -179,18 +179,18 @@ export default function SchemeIngestionPage() {
         </div>
       )}
 
-      {/* Cron banner */}
+      {/* Manual-update banner */}
       <div className="bg-card border border-border px-4 py-2.5 text-xs text-muted-foreground flex items-center gap-2">
         <CalendarClock className="h-4 w-4 text-muted-foreground" />
-        Auto-refresh runs <span className="font-bold text-foreground">weekly · Sunday 02:00</span> (eMSME → myScheme, incremental).
+        Scheme data is refreshed <span className="font-bold text-foreground">manually</span> using the controls below (Source 1 → Source 2, incremental).
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={Database} label="Total schemes" value={int(stats?.total)} color="text-indigo-500" />
-        <StatCard icon={DatabaseZap} label="eMSME schemes" value={int(countFor('emsme'))}
+        <StatCard icon={DatabaseZap} label="Source 1 schemes" value={int(countFor('emsme'))}
           sub={dt(stats?.lastRun?.emsme?.startedAt)} color="text-emerald-500" />
-        <StatCard icon={Layers} label="myScheme schemes" value={int(countFor('myscheme'))}
+        <StatCard icon={Layers} label="Source 2 schemes" value={int(countFor('myscheme'))}
           sub={dt(stats?.lastRun?.myscheme?.startedAt)} color="text-sky-500" />
         <StatCard icon={running ? Loader2 : CheckCircle2}
           label="Engine status"

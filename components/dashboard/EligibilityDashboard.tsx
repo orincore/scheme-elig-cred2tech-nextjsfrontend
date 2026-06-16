@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSchemes, SchemeDecisionItem } from '@/contexts/SchemesContext';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { getOwnedDocs, OwnedDocs } from '@/lib/documentMatch';
@@ -417,10 +418,14 @@ export default function EligibilityDashboard() {
       {/* Paid re-run confirmation — matches the scheme-application "Upload
           Documents" dialog (sharp rounded-lg edges, bg-background, border-b/border-t
           sections). Kept as a plain overlay (NOT Radix) so the Razorpay popup
-          launched afterwards stays fully interactive. */}
-      {reanalyzeOpen && (
+          launched afterwards stays fully interactive.
+          Rendered through a portal to <body> so an animated/transformed dashboard
+          ancestor can't become the containing block for `position: fixed` (which
+          was centering it inside the schemes section and pushing it off-screen).
+          Anchored toward the top + scrollable so it's always reachable. */}
+      {reanalyzeOpen && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 sm:pt-24"
           onClick={() => { if (!reanalyzePaying) setReanalyzeOpen(false); }}
         >
           <div
@@ -472,7 +477,8 @@ export default function EligibilityDashboard() {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Celebratory congratulations message */}

@@ -40,7 +40,7 @@ export default function CompleteProfileModal({ token, initialName, initialEmail,
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: name.trim(), email: email.trim() }),
+        body: JSON.stringify({ personalName: name.trim(), email: email.trim() }),
       });
       const data = await response.json();
       if (data.success) {

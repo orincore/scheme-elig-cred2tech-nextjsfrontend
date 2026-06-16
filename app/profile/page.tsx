@@ -255,9 +255,9 @@ export default function ProfilePage() {
   const handleSaveProfile = async () => {
     setIsSaving(true);
     try {
-      const res  = await fetch(`${API_BASE_URL}/api/msme-auth/profile`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: editName, email: editEmail }) });
+      const res  = await fetch(`${API_BASE_URL}/api/msme-auth/profile`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ personalName: editName, email: editEmail }) });
       const data = await res.json();
-      if (data.success) { setProfileData((p: any) => ({ ...p, name: editName, email: editEmail })); setIsEditing(false); toast.success('Profile updated'); }
+      if (data.success) { setProfileData((p: any) => ({ ...p, personalName: editName, email: editEmail })); setIsEditing(false); toast.success('Profile updated'); }
       else toast.error(data.message || 'Failed to update profile');
     } catch { toast.error('Failed to update profile'); }
     finally { setIsSaving(false); }
@@ -362,7 +362,7 @@ export default function ProfilePage() {
 
   const sectorNeedsClarification = needsSectorClarification(profileData?.businessSector);
   const currentSectorLabel       = SECTOR_OPTIONS.find(o => o.value === profileData?.businessSector)?.label;
-  const displayName              = profileData?.name || profileData?.legalNameOfBusiness || userProfile?.name || '—';
+  const displayName              = profileData?.personalName || profileData?.name || profileData?.legalNameOfBusiness || userProfile?.personalName || userProfile?.name || '—';
   const displayMobile            = profileData?.mobileNumber || userProfile?.mobile || '—';
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -459,7 +459,7 @@ export default function ProfilePage() {
               title="Personal Information"
               icon={User}
               actions={!isEditing
-                ? <EditBtn onClick={() => { setEditName(profileData?.name || ''); setEditEmail(profileData?.email || ''); setIsEditing(true); }} />
+                ? <EditBtn onClick={() => { setEditName(profileData?.personalName || profileData?.name || ''); setEditEmail(profileData?.email || ''); setIsEditing(true); }} />
                 : <SaveCancelBtns onSave={handleSaveProfile} onCancel={() => setIsEditing(false)} saving={isSaving} />
               }
             >
@@ -484,7 +484,7 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 <>
-                  <InfoRow label="Name"   value={profileData?.name || profileData?.legalNameOfBusiness || userProfile?.name} />
+                  <InfoRow label="Name"   value={profileData?.personalName || profileData?.name || profileData?.legalNameOfBusiness || userProfile?.personalName || userProfile?.name} />
                   <InfoRow label="Mobile" value={displayMobile} />
                   <InfoRow label="Email"  value={profileData?.email || userProfile?.email} />
                   <InfoRow label="PAN"    value={profileData?.panNumber || userProfile?.pan} />

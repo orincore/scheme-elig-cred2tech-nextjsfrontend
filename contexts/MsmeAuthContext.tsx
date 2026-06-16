@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { getMissingFields } from '@/lib/eligibilityFields';
+import { getMissingFields, isManualBusiness, BUSINESS_IDENTITY_FIELDS, IDENTITY_SOURCE_MAP } from '@/lib/eligibilityFields';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
@@ -28,6 +28,8 @@ export interface UserProfile {
   mobile: string;
   pan: string;
   name: string;
+  // The person's own name (distinct from the business name auto-filled from PAN).
+  personalName?: string;
   email: string;
   businessType: string;
   state: string;
@@ -185,6 +187,15 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       const profile = profData?.user || {};
       const profileComplete = getMissingFields(profile).length === 0;
       if (!profileComplete) return 'profile';
+
+      // No-GSTIN business must still supply the identity/address the GST API would
+      // have provided before it counts as complete.
+      if (isManualBusiness(profile)) {
+        const identityMissing = BUSINESS_IDENTITY_FIELDS.some(
+          (f) => !f.optional && !IDENTITY_SOURCE_MAP[f.key]?.(profile),
+        );
+        if (identityMissing) return 'profile';
+      }
 
       return 'dashboard';
     } catch {
@@ -365,9 +376,9 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
       // Track the business this PAN was attached to (used for the payment step).
       if (businessId) setPendingBusinessId(Number(businessId));
 
-      // Persist personal name + email to the DB so we don't re-ask for it on the
-      // dashboard (CompleteProfileModal triggers when the stored email is empty).
-      if (profile.email || profile.name) {
+      // Persist personal name + email so we don't re-ask for it on the dashboard
+      // (CompleteProfileModal triggers when the stored email is empty).
+      if (profile.email || profile.personalName) {
         try {
           await fetch(`${API_BASE_URL}/api/msme-auth/profile`, {
             method: 'PUT',
@@ -375,7 +386,10 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`,
             },
-            body: JSON.stringify({ name: profile.name, email: profile.email }),
+            body: JSON.stringify({
+              personalName: profile.personalName || undefined,
+              email: profile.email || undefined,
+            }),
           });
         } catch {
           /* non-fatal — user can still complete it later */
@@ -507,7 +521,7 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
           setIsLoading(false);
         },
         prefill: {
-          name: userProfile?.name || '',
+          name: userProfile?.personalName || userProfile?.name || '',
           email: userProfile?.email || '',
           contact: mobile || '',
         },

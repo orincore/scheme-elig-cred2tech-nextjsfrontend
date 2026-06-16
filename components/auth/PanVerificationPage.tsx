@@ -32,10 +32,14 @@ export default function PanVerificationPage() {
   // No longer relies on pendingBusinessId since we don't pre-create the row.
   const isAddingAnother = (businesses?.filter(b => b.panVerified)?.length || 0) > 0;
   const [pan, setPan] = useState('');
-  const [name, setName] = useState('');
+  // The person's own name (kept distinct from the business name fetched from PAN).
+  const [personalName, setPersonalName] = useState('');
   const [email, setEmail] = useState('');
   const [businessType, setBusinessType] = useState('');
   const [state, setState] = useState('');
+  // True when the PAN has no linked GST profile, so business details must be
+  // entered manually (auto-fallback path).
+  const [manualEntry, setManualEntry] = useState(false);
 
   // CICRA consent gate — PAN verification collects credit information, which the
   // backend blocks (403 CONSENT_REQUIRED) until a valid consent exists.
@@ -119,26 +123,34 @@ export default function PanVerificationPage() {
       }
 
       if (data.success) {
-        setPanData(data.data);
         setPanVerified(true);
         setPanError(null);
         if (data.businessId) setVerifiedBusinessId(Number(data.businessId));
 
-        if (data.data.legalNameOfBusiness) setName(data.data.legalNameOfBusiness);
-        if (data.data.principalState) setState(data.data.principalState);
-        if (data.data.constitutionOfBusiness) {
-          const constitutionMap: Record<string, string> = {
-            'Private Limited Company': 'pvt-ltd',
-            'Public Limited Company': 'public-ltd',
-            'Limited Liability Partnership': 'llp',
-            'Partnership': 'partnership',
-            'Proprietorship': 'sole-proprietor',
-            'Sole Proprietor': 'sole-proprietor',
-          };
-          setBusinessType(constitutionMap[data.data.constitutionOfBusiness] || '');
+        // No-GSTIN fallback: the PAN is valid but has no linked GST business
+        // profile. Capture the holder's name and let them fill in the rest.
+        if (data.manualEntryRequired) {
+          setManualEntry(true);
+          setPanData(null);
+          if (data.data?.personalName) setPersonalName(data.data.personalName);
+          toast.success('PAN verified. Please add your business details below.');
+        } else {
+          setManualEntry(false);
+          setPanData(data.data);
+          if (data.data.principalState) setState(data.data.principalState);
+          if (data.data.constitutionOfBusiness) {
+            const constitutionMap: Record<string, string> = {
+              'Private Limited Company': 'pvt-ltd',
+              'Public Limited Company': 'public-ltd',
+              'Limited Liability Partnership': 'llp',
+              'Partnership': 'partnership',
+              'Proprietorship': 'sole-proprietor',
+              'Sole Proprietor': 'sole-proprietor',
+            };
+            setBusinessType(constitutionMap[data.data.constitutionOfBusiness] || '');
+          }
+          toast.success('PAN verified successfully');
         }
-
-        toast.success('PAN verified successfully');
       } else {
         // 409 Conflict = duplicate PAN; surface as inline error, not just toast
         const msg: string = data.message || 'PAN verification failed';
@@ -171,7 +183,20 @@ export default function PanVerificationPage() {
       return;
     }
 
-    const success = await setPanAndProfile(pan, { name, email, businessType, state }, userId, verifiedBusinessId ?? pendingBusinessId);
+    const success = await setPanAndProfile(
+      pan,
+      {
+        // Keep `name` populated locally with the personal name as a fallback for
+        // any reader; the backend stores the personal name separately.
+        name: personalName,
+        personalName,
+        email,
+        businessType,
+        state,
+      },
+      userId,
+      verifiedBusinessId ?? pendingBusinessId,
+    );
 
     if (success) {
       toast.success('Profile verified successfully');
@@ -280,6 +305,28 @@ export default function PanVerificationPage() {
               ))}
             </div>
           </div>
+        )}
+
+        {/* No-GSTIN notice: PAN valid but no linked GST profile → manual entry */}
+        {panVerified && manualEntry && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/20 px-4 py-3">
+            <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-[13px] text-amber-700 dark:text-amber-400 leading-snug">
+              We couldn&apos;t find GST records for this PAN. No problem — we&apos;ll ask
+              for your business name, address and a few more details on the next step.
+            </p>
+          </div>
+        )}
+
+        {/* Your name (personal) — collected on both paths */}
+        {panVerified && (
+          <UnderlineField
+            label="Your Name"
+            placeholder="Name as per PAN"
+            value={personalName}
+            onChange={setPersonalName}
+            disabled={isLoading}
+          />
         )}
 
         {/* Email (new user only) */}

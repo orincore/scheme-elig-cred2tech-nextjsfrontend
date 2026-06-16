@@ -74,9 +74,9 @@ export default function DashboardPage() {
         const data = await res.json();
         if (data.success) {
           const user = data.user;
-          setProfileName(user.name || user.legalNameOfBusiness || '');
+          setProfileName(user.personalName || user.name || user.legalNameOfBusiness || '');
           setProfileEmail(user.email || '');
-          if ((!user.name && !user.legalNameOfBusiness) || !user.email) {
+          if ((!user.personalName && !user.name && !user.legalNameOfBusiness) || !user.email) {
             setShowCompleteProfile(true);
           }
         }
