@@ -10,6 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RequestDocumentsDialog } from '@/components/cases/RequestDocumentsDialog';
+import { MeetingDialog, MeetingFormValues } from '@/components/cases/MeetingDialog';
+import { AgreementCard, AgreementInfo } from '@/components/cases/AgreementCard';
+import { meetingPlatformLabel, formatMeetingDateTime, CaseMeeting } from '@/lib/meetingUtils';
 import { DocumentViewer } from '@/components/ui/document-viewer';
 import {
   Dialog,
@@ -43,6 +46,10 @@ import {
   Inbox,
   MessageSquare,
   TrendingUp,
+  CalendarClock,
+  CalendarX2,
+  CalendarCheck2,
+  Link as LinkIcon,
 } from 'lucide-react';
 
 interface CaseDetails {
@@ -233,6 +240,92 @@ export default function AdminCaseDetailPage() {
   const [newPriority, setNewPriority] = useState('');
   const [updatingPriority, setUpdatingPriority] = useState(false);
 
+  // ── Meetings ─────────────────────────────────────────────────────────────────
+  const [meetings, setMeetings] = useState<CaseMeeting[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(false);
+  const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
+  const [meetingDialogMode, setMeetingDialogMode] = useState<'schedule' | 'reschedule'>('schedule');
+  const [cancelMeetingOpen, setCancelMeetingOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancellingMeeting, setCancellingMeeting] = useState(false);
+  const [completingMeeting, setCompletingMeeting] = useState(false);
+
+  const activeMeeting = meetings.find((m) => m.status === 'SCHEDULED') || null;
+
+  const fetchMeetings = async () => {
+    setMeetingsLoading(true);
+    try {
+      const res = await casesApi.getCaseMeetings(caseId);
+      if (res.success) setMeetings(res.meetings || []);
+    } catch (err: any) {
+      console.error('Failed to load meetings:', err.message);
+    } finally {
+      setMeetingsLoading(false);
+    }
+  };
+
+  // ── Agreement ────────────────────────────────────────────────────────────────
+  const [agreement, setAgreement] = useState<AgreementInfo | null>(null);
+  const [agreementLoading, setAgreementLoading] = useState(false);
+  const [uploadingAgreement, setUploadingAgreement] = useState(false);
+
+  const fetchAgreement = async () => {
+    setAgreementLoading(true);
+    try {
+      const res = await casesApi.getAgreement(caseId);
+      if (res.success) setAgreement(res.agreement || null);
+    } catch (err: any) {
+      console.error('Failed to load agreement:', err.message);
+    } finally {
+      setAgreementLoading(false);
+    }
+  };
+
+  const handleUploadAgreement = async (file: File) => {
+    setUploadingAgreement(true);
+    try {
+      const res = await casesApi.uploadAgreement(caseId, file);
+      if (res.success === false) {
+        toast.error(res.message || 'Failed to upload agreement');
+        return;
+      }
+      toast.success(res.message || 'Agreement uploaded');
+      await fetchAgreement();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload agreement');
+    } finally {
+      setUploadingAgreement(false);
+    }
+  };
+
+  const handleRemoveAgreement = async () => {
+    try {
+      const res = await casesApi.removeAgreement(caseId);
+      if (res.success === false) {
+        toast.error(res.message || 'Failed to remove agreement');
+        return;
+      }
+      toast.success(res.message || 'Agreement removed');
+      await fetchAgreement();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to remove agreement');
+    }
+  };
+
+  const handleViewAgreement = async () => {
+    try {
+      const res = await casesApi.getAgreementUrl(caseId);
+      if (!res.success || !res.fileUrl) {
+        toast.error('Agreement is temporarily unavailable. Please try again.');
+        return;
+      }
+      setViewerUrl(res.fileUrl);
+      setViewerName(agreement?.originalFileName || 'Service Agreement.pdf');
+    } catch (err: any) {
+      toast.error(err.message || 'Agreement is temporarily unavailable.');
+    }
+  };
+
   // ── Fetch case details ──────────────────────────────────────────────────────
   const fetchCaseDetails = async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -265,6 +358,8 @@ export default function AdminCaseDetailPage() {
 
   useEffect(() => {
     fetchCaseDetails(true);
+    fetchMeetings();
+    fetchAgreement();
   }, [caseId]);
 
   // ── Fetch documents ─────────────────────────────────────────────────────────
@@ -387,6 +482,61 @@ export default function AdminCaseDetailPage() {
       toast.error(err.message || 'Failed to update priority');
     } finally {
       setUpdatingPriority(false);
+    }
+  };
+
+  // ── Meetings ─────────────────────────────────────────────────────────────────
+  const handleMeetingSubmit = async (values: MeetingFormValues) => {
+    if (meetingDialogMode === 'schedule') {
+      return casesApi.scheduleMeeting(caseId, {
+        platform: values.platform,
+        scheduledAt: values.scheduledAt,
+        durationMinutes: values.durationMinutes,
+        meetingLink: values.meetingLink,
+        dialInInfo: values.dialInInfo,
+        location: values.location,
+        notes: values.notes,
+      });
+    }
+    if (!activeMeeting) return { success: false, message: 'No active meeting to reschedule' };
+    return casesApi.rescheduleMeeting(caseId, String(activeMeeting.id), values.scheduledAt, values.reason);
+  };
+
+  const handleCancelMeeting = async () => {
+    if (!activeMeeting) return;
+    setCancellingMeeting(true);
+    try {
+      const res = await casesApi.cancelMeeting(caseId, String(activeMeeting.id), cancelReason.trim() || undefined);
+      if (res.success === false) {
+        toast.error(res.message || 'Failed to cancel meeting');
+        return;
+      }
+      toast.success('Meeting cancelled');
+      setCancelMeetingOpen(false);
+      setCancelReason('');
+      await fetchMeetings();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to cancel meeting');
+    } finally {
+      setCancellingMeeting(false);
+    }
+  };
+
+  const handleCompleteMeeting = async () => {
+    if (!activeMeeting) return;
+    setCompletingMeeting(true);
+    try {
+      const res = await casesApi.completeMeeting(caseId, String(activeMeeting.id));
+      if (res.success === false) {
+        toast.error(res.message || 'Failed to mark meeting as done');
+        return;
+      }
+      toast.success('Meeting marked as done');
+      await fetchMeetings();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to mark meeting as done');
+    } finally {
+      setCompletingMeeting(false);
     }
   };
 
@@ -556,6 +706,76 @@ export default function AdminCaseDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Meeting */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader
+              icon={CalendarClock}
+              title="Meeting"
+              action={
+                caseDetails.assignedAgentName && !activeMeeting && !meetingsLoading ? (
+                  <button
+                    className={actionBtn}
+                    onClick={() => { setMeetingDialogMode('schedule'); setMeetingDialogOpen(true); }}
+                  >
+                    <CalendarClock className="h-3.5 w-3.5" />Schedule Meeting
+                  </button>
+                ) : undefined
+              }
+            />
+            <div className="px-5 py-4">
+              {meetingsLoading ? (
+                <Skeleton className="h-16 w-full" />
+              ) : !caseDetails.assignedAgentName ? (
+                <div className="flex items-center justify-center py-6">
+                  <p className="text-sm text-muted-foreground/60 italic">Assign an agent before scheduling a meeting</p>
+                </div>
+              ) : activeMeeting ? (
+                <>
+                  <InfoRow label="Platform" value={meetingPlatformLabel(activeMeeting.platform)} />
+                  <InfoRow label="When"      value={formatMeetingDateTime(activeMeeting.scheduledAt)} />
+                  {activeMeeting.meetingLink && (
+                    <InfoRow label="Link" value={
+                      <a href={activeMeeting.meetingLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                        <LinkIcon className="h-3 w-3" />{activeMeeting.meetingLink}
+                      </a>
+                    } />
+                  )}
+                  {activeMeeting.dialInInfo && <InfoRow label="Dial-in" value={activeMeeting.dialInInfo} />}
+                  {activeMeeting.location && <InfoRow label="Location" value={activeMeeting.location} />}
+                  {activeMeeting.notes && <InfoRow label="Notes" value={activeMeeting.notes} />}
+
+                  <div className="flex items-center gap-2 flex-wrap mt-3">
+                    <button className={actionBtn} onClick={() => { setMeetingDialogMode('reschedule'); setMeetingDialogOpen(true); }}>
+                      <CalendarClock className="h-3.5 w-3.5" />Reschedule
+                    </button>
+                    <button className={actionBtn} onClick={() => setCancelMeetingOpen(true)}>
+                      <CalendarX2 className="h-3.5 w-3.5" />Cancel
+                    </button>
+                    <button className={actionBtn} onClick={handleCompleteMeeting} disabled={completingMeeting}>
+                      {completingMeeting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarCheck2 className="h-3.5 w-3.5" />}
+                      Mark as Done
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center py-6">
+                  <p className="text-sm text-muted-foreground/60 italic">No meeting scheduled</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Service Agreement */}
+          <AgreementCard
+            role="admin"
+            agreement={agreement}
+            loading={agreementLoading}
+            canUpload={!!caseDetails.assignedAgentName}
+            onUpload={handleUploadAgreement}
+            onRemove={handleRemoveAgreement}
+            onView={handleViewAgreement}
+          />
 
           {/* Documents */}
           <div className="bg-card border border-border rounded-none overflow-hidden">
@@ -796,6 +1016,38 @@ export default function AdminCaseDetailPage() {
             <Button variant="outline" size="sm" onClick={() => setPriorityOpen(false)} disabled={updatingPriority}>Cancel</Button>
             <Button size="sm" onClick={handleUpdatePriority} disabled={!newPriority || updatingPriority}>
               {updatingPriority && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Schedule / Reschedule Meeting */}
+      <MeetingDialog
+        open={meetingDialogOpen}
+        onOpenChange={setMeetingDialogOpen}
+        mode={meetingDialogMode}
+        currentPlatform={activeMeeting?.platform}
+        onSubmit={handleMeetingSubmit}
+        onDone={fetchMeetings}
+      />
+
+      {/* Cancel Meeting */}
+      <Dialog open={cancelMeetingOpen} onOpenChange={(open) => { if (!cancellingMeeting) { setCancelMeetingOpen(open); if (!open) setCancelReason(''); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarX2 className="h-5 w-5" />Cancel Meeting
+            </DialogTitle>
+            <DialogDescription>The agent and MSME will be notified by email that the meeting is cancelled.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="cancel-reason">Reason (optional)</Label>
+            <Textarea id="cancel-reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Why is this meeting being cancelled" rows={3} disabled={cancellingMeeting} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setCancelMeetingOpen(false)} disabled={cancellingMeeting}>Keep Meeting</Button>
+            <Button size="sm" variant="destructive" onClick={handleCancelMeeting} disabled={cancellingMeeting}>
+              {cancellingMeeting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Cancel Meeting
             </Button>
           </DialogFooter>
         </DialogContent>

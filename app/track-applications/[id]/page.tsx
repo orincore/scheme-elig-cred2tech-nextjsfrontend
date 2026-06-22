@@ -17,11 +17,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { DocumentViewer } from '@/components/ui/document-viewer';
+import { meetingPlatformLabel, formatMeetingDateTime, CaseMeeting } from '@/lib/meetingUtils';
+import { AgreementCard, AgreementInfo } from '@/components/cases/AgreementCard';
+import { SignAgreementDialog } from '@/components/cases/SignAgreementDialog';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
   Building2,
   Calendar,
+  CalendarClock,
   Phone,
   Mail,
   MapPin,
@@ -41,6 +45,7 @@ import {
   Globe,
   Eye,
   FolderOpen,
+  Link as LinkIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -181,7 +186,7 @@ function PriorityPill({ priority }: { priority: string }) {
   return <span className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${cfg.cls}`}>{priority}</span>;
 }
 
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
+function InfoRow({ label, value }: { label: string; value?: React.ReactNode }) {
   if (!value) return null;
   return (
     <div className="flex items-start gap-4 py-2.5 border-b border-border last:border-0">
@@ -231,6 +236,10 @@ export default function MsmeCaseDetailPage() {
   const [reqsLoading, setReqsLoading] = useState(false);
 
   const [caseDocuments, setCaseDocuments] = useState<any[]>([]);
+  const [upcomingMeeting, setUpcomingMeeting] = useState<CaseMeeting | null>(null);
+  const [agreement, setAgreement] = useState<AgreementInfo | null>(null);
+  const [agreementLoading, setAgreementLoading] = useState(false);
+  const [signAgreementOpen, setSignAgreementOpen] = useState(false);
   const [viewerUrl, setViewerUrl]         = useState<string | null>(null);
   const [viewerName, setViewerName]       = useState<string>('');
 
@@ -293,10 +302,51 @@ export default function MsmeCaseDetailPage() {
     }
   };
 
+  const fetchUpcomingMeeting = async () => {
+    if (!userId || !caseId) return;
+    try {
+      const res = await casesApi.getMsmeUpcomingMeeting(caseId, parseInt(userId));
+      if (res.success) setUpcomingMeeting(res.meeting || null);
+    } catch (err: any) {
+      console.error('Failed to load meeting:', err.message);
+    }
+  };
+
+  const fetchAgreement = async () => {
+    if (!userId || !caseId) return;
+    setAgreementLoading(true);
+    try {
+      const res = await casesApi.getMsmeAgreement(caseId, parseInt(userId));
+      if (res.success) setAgreement(res.agreement || null);
+    } catch (err: any) {
+      console.error('Failed to load agreement:', err.message);
+    } finally {
+      setAgreementLoading(false);
+    }
+  };
+
+  const handleViewAgreement = async () => {
+    if (!userId) return;
+    try {
+      const res = await casesApi.getMsmeAgreementUrl(caseId, parseInt(userId));
+      if (!res.success || !res.fileUrl) {
+        toast.error('Agreement is temporarily unavailable. Please try again.');
+        return;
+      }
+      setViewerUrl(res.fileUrl);
+      setViewerName(agreement?.originalFileName || 'Service Agreement.pdf');
+    } catch (err: any) {
+      toast.error(err.message || 'Agreement is temporarily unavailable.');
+    }
+  };
+
+  const handleSignAgreement = (fullName: string) =>
+    casesApi.signAgreementAsMsme(caseId, parseInt(userId!), fullName);
+
   useEffect(() => {
     const load = async () => {
       if (!userId) { setIsLoading(false); return; }
-      await Promise.all([fetchCaseDetails(), fetchDocumentRequests(), fetchCaseDocuments()]);
+      await Promise.all([fetchCaseDetails(), fetchDocumentRequests(), fetchCaseDocuments(), fetchUpcomingMeeting(), fetchAgreement()]);
       setIsLoading(false);
     };
     if (authStep === 'authenticated') load();
@@ -577,6 +627,33 @@ export default function MsmeCaseDetailPage() {
               </div>
             )}
           </SectionBox>
+
+          {/* Upcoming meeting (admin-scheduled — disappears once cancelled/done) */}
+          {upcomingMeeting && (
+            <SectionBox title="Upcoming Meeting" icon={CalendarClock}>
+              <InfoRow label="Platform" value={meetingPlatformLabel(upcomingMeeting.platform)} />
+              <InfoRow label="When"      value={formatMeetingDateTime(upcomingMeeting.scheduledAt)} />
+              {upcomingMeeting.meetingLink && (
+                <InfoRow label="Link" value={
+                  <a href={upcomingMeeting.meetingLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                    <LinkIcon className="h-3 w-3" />Join Meeting
+                  </a>
+                } />
+              )}
+              {upcomingMeeting.dialInInfo && <InfoRow label="Dial-in" value={upcomingMeeting.dialInInfo} />}
+              {upcomingMeeting.location && <InfoRow label="Location" value={upcomingMeeting.location} />}
+              {upcomingMeeting.notes && <InfoRow label="Notes" value={upcomingMeeting.notes} />}
+            </SectionBox>
+          )}
+
+          {/* Service Agreement */}
+          <AgreementCard
+            role="msme"
+            agreement={agreement}
+            loading={agreementLoading}
+            onView={handleViewAgreement}
+            onSign={() => setSignAgreementOpen(true)}
+          />
         </div>
 
         {/* ─── Business / MSME info ─────────────────────────────────────────── */}
@@ -947,6 +1024,13 @@ export default function MsmeCaseDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SignAgreementDialog
+        open={signAgreementOpen}
+        onOpenChange={setSignAgreementOpen}
+        onSign={handleSignAgreement}
+        onDone={fetchAgreement}
+      />
 
       {/* ─── Document Viewer ───────────────────────────────────────────────── */}
       {viewerUrl && (

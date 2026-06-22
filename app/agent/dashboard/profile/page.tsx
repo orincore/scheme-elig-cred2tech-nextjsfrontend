@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { User, Mail, Phone, MapPin, Star, ShieldCheck, Pencil, Save, X, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Star, ShieldCheck, Pencil, Save, X, Eye, EyeOff, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PILL = 'inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full';
@@ -45,7 +45,8 @@ export default function AgentProfilePage() {
 
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ fullName: '', phone: '', region: '', availability: 'AVAILABLE', gender: '' });
+  const [form, setForm] = useState({ fullName: '', phone: '', region: '', availability: 'AVAILABLE', gender: '', city: '', state: '', pincode: '', supportedSchemes: [] as string[] });
+  const [schemeInput, setSchemeInput] = useState('');
 
   // Password change
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -62,6 +63,10 @@ export default function AgentProfilePage() {
         region: agent.region || '',
         availability: agent.availability || 'AVAILABLE',
         gender: agent.gender || '',
+        city: agent.city || '',
+        state: agent.state || '',
+        pincode: agent.pincode || '',
+        supportedSchemes: agent.supportedSchemes || [],
       });
     }
   }, [agent]);
@@ -69,14 +74,15 @@ export default function AgentProfilePage() {
   const startEdit = () => setEditing(true);
   const cancelEdit = () => {
     setEditing(false);
-    if (agent) setForm({ fullName: agent.fullName || '', phone: agent.phone || '', region: agent.region || '', availability: agent.availability || 'AVAILABLE', gender: agent.gender || '' });
+    if (agent) setForm({ fullName: agent.fullName || '', phone: agent.phone || '', region: agent.region || '', availability: agent.availability || 'AVAILABLE', gender: agent.gender || '', city: agent.city || '', state: agent.state || '', pincode: agent.pincode || '', supportedSchemes: agent.supportedSchemes || [] });
+    setSchemeInput('');
   };
 
   const saveProfile = async () => {
     if (!form.fullName.trim()) { toast.error('Full name is required'); return; }
     setSaving(true);
     try {
-      const res = await agentAuthApi.updateProfile(form);
+      const res = await agentAuthApi.updateProfile({ ...form, supportedSchemes: form.supportedSchemes });
       if (res.success) {
         toast.success('Profile updated');
         setEditing(false);
@@ -170,6 +176,18 @@ export default function AgentProfilePage() {
                     <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="h-9 text-sm" />
                   </div>
                   <div className="space-y-1.5">
+                    <Label>City</Label>
+                    <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="h-9 text-sm" placeholder="e.g. Pune" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>State</Label>
+                    <Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="h-9 text-sm" placeholder="e.g. Maharashtra" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Pincode</Label>
+                    <Input value={form.pincode} onChange={(e) => setForm({ ...form, pincode: e.target.value })} className="h-9 text-sm" placeholder="6-digit pincode" maxLength={6} />
+                  </div>
+                  <div className="space-y-1.5">
                     <Label>Region</Label>
                     <Input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} className="h-9 text-sm" />
                   </div>
@@ -191,15 +209,73 @@ export default function AgentProfilePage() {
                       <option value="ON_LEAVE">On Leave</option>
                     </select>
                   </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label>Supported Schemes</Label>
+                    <p className="text-[11px] text-muted-foreground">Add scheme IDs/names you handle. Only cases matching these schemes will be assigned to you.</p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={schemeInput}
+                        onChange={(e) => setSchemeInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && schemeInput.trim()) {
+                            e.preventDefault();
+                            const val = schemeInput.trim();
+                            if (!form.supportedSchemes.includes(val)) setForm({ ...form, supportedSchemes: [...form.supportedSchemes, val] });
+                            setSchemeInput('');
+                          }
+                        }}
+                        className="h-9 text-sm"
+                        placeholder="Type scheme name and press Enter…"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = schemeInput.trim();
+                          if (val && !form.supportedSchemes.includes(val)) setForm({ ...form, supportedSchemes: [...form.supportedSchemes, val] });
+                          setSchemeInput('');
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
+                      >
+                        <Plus className="h-3.5 w-3.5" />Add
+                      </button>
+                    </div>
+                    {form.supportedSchemes.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {form.supportedSchemes.map((s) => (
+                          <span key={s} className="inline-flex items-center gap-1 text-[11px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                            {s}
+                            <button type="button" onClick={() => setForm({ ...form, supportedSchemes: form.supportedSchemes.filter((x) => x !== s) })} className="hover:text-destructive transition-colors"><Trash2 className="h-2.5 w-2.5" /></button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <>
                   <InfoRow label="Full Name"    value={agent.fullName} />
                   <InfoRow label="Email"        value={<span className="font-mono">{agent.email}</span>} />
                   <InfoRow label="Phone"        value={<span className="font-mono">{agent.phone}</span>} />
+                  <InfoRow label="City"         value={agent.city} />
+                  <InfoRow label="State"        value={agent.state} />
+                  <InfoRow label="Pincode"      value={agent.pincode} />
                   <InfoRow label="Region"       value={agent.region} />
                   <InfoRow label="Gender"       value={agent.gender} />
                   <InfoRow label="Availability" value={<AvailPill a={agent.availability} />} />
+                  <InfoRow
+                    label="Supported Schemes"
+                    value={
+                      agent.supportedSchemes?.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {agent.supportedSchemes.map((s: string) => (
+                            <span key={s} className="text-[11px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">{s}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground/50 italic text-xs">All schemes (none specified)</span>
+                      )
+                    }
+                  />
                 </>
               )}
             </div>

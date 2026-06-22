@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Briefcase, Search, Filter, UserCheck, Calendar, User } from 'lucide-react';
+import { Briefcase, Search, Filter, UserCheck, Calendar, User, MapPin, Loader2, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STATUS_OPTIONS = [
@@ -64,7 +64,6 @@ function PriorityPill({ priority }: { priority: string }) {
 export default function CasesPage() {
   const router = useRouter();
   const [cases, setCases] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -74,10 +73,12 @@ export default function CasesPage() {
   const [selectedAgent, setSelectedAgent] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
+  const [eligibleAgents, setEligibleAgents] = useState<any[]>([]);
+  const [eligibleLoading, setEligibleLoading] = useState(false);
+  const [eligibleError, setEligibleError] = useState('');
 
   useEffect(() => {
     loadCases();
-    loadAgents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, priorityFilter]);
 
@@ -98,21 +99,22 @@ export default function CasesPage() {
     }
   };
 
-  const loadAgents = async () => {
+  const loadEligibleAgents = async (caseId: string) => {
+    setEligibleLoading(true);
+    setEligibleError('');
+    setEligibleAgents([]);
     try {
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_BASE_URL}/api/admin-auth/agents?approvalStatus=APPROVED`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` },
-      });
-      const data = await response.json();
-      if (data.success) setAgents(data.agents.filter((a: any) => a.status !== 'BLOCKED'));
-    } catch (error) {
-      console.error('Failed to load agents:', error);
+      const res = await casesApi.getEligibleAgents(caseId);
+      if (res.success) setEligibleAgents(res.agents);
+      else setEligibleError('Could not load eligible agents.');
+    } catch (err: any) {
+      setEligibleError(err?.message || 'Could not load eligible agents.');
+    } finally {
+      setEligibleLoading(false);
     }
   };
 
   // Auto-open the assign dialog when navigated here with ?assign=<caseId>
-  // (the admin dashboard links here expecting the dialog to open).
   useEffect(() => {
     if (isLoading || cases.length === 0) return;
     const params = new URLSearchParams(window.location.search);
@@ -121,10 +123,13 @@ export default function CasesPage() {
     const match = cases.find((c) => String(c.id) === String(assignId));
     if (match) {
       setSelectedCase(match);
+      setSelectedAgent('');
+      setAssignmentNotes('');
       setAssignDialog(true);
-      // Clear the param so it doesn't re-open on filter changes.
+      loadEligibleAgents(String(match.id));
       window.history.replaceState({}, '', '/admin/dashboard/cases');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, cases]);
 
   const handleAssign = async () => {
@@ -152,6 +157,7 @@ export default function CasesPage() {
     setSelectedAgent('');
     setAssignmentNotes('');
     setAssignDialog(true);
+    loadEligibleAgents(String(caseItem.id));
   };
 
   const filteredCases = cases.filter((c) => {
@@ -356,33 +362,116 @@ export default function CasesPage() {
 
       {/* ─── Assign Dialog ────────────────────────────────────────────────── */}
       <Dialog open={assignDialog} onOpenChange={(open) => { if (!isAssigning) setAssignDialog(open); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserCheck className="h-5 w-5" />
               {selectedCase?.status === 'NEW' ? 'Assign Case' : 'Reassign Case'}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="flex flex-wrap items-center gap-1.5">
               <span className="font-mono">{selectedCase?.caseNumber}</span>
-              {selectedCase?.schemeName ? ` · ${selectedCase.schemeName}` : ''}
+              {selectedCase?.schemeName && (
+                <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                  {selectedCase.schemeName}
+                </span>
+              )}
+              <span className="text-[10px] text-muted-foreground">· Only available agents who support this scheme are shown</span>
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* Agent list */}
             <div className="space-y-2">
               <Label>Select Agent *</Label>
-              <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-                <SelectTrigger><SelectValue placeholder="Choose an agent…" /></SelectTrigger>
-                <SelectContent>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id.toString()}>
-                      {agent.fullName} ({agent.employeeId}){agent.region ? ` · ${agent.region}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {agents.length === 0 && (
-                <p className="text-xs text-muted-foreground">No approved agents available.</p>
+
+              {eligibleLoading && (
+                <div className="flex items-center gap-2 py-6 justify-center text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">Finding eligible agents…</span>
+                </div>
+              )}
+
+              {!eligibleLoading && eligibleError && (
+                <p className="text-xs text-destructive py-2">{eligibleError}</p>
+              )}
+
+              {!eligibleLoading && !eligibleError && eligibleAgents.length === 0 && (
+                <div className="rounded-md border border-border bg-muted/20 px-4 py-6 text-center">
+                  <User className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                  <p className="text-sm font-medium text-foreground">No eligible agents available</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    No available agents support this scheme. Check agent profiles to add supported schemes.
+                  </p>
+                </div>
+              )}
+
+              {!eligibleLoading && eligibleAgents.length > 0 && (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {eligibleAgents.map((agent) => {
+                    const isSelected = selectedAgent === String(agent.id);
+                    return (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => setSelectedAgent(String(agent.id))}
+                        className={`w-full text-left rounded-md border px-3 py-2.5 transition-colors ${
+                          isSelected
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                            : 'border-border bg-card hover:bg-muted/30'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold shrink-0">
+                              {agent.fullName?.[0]?.toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-sm font-semibold text-foreground">{agent.fullName}</p>
+                                <span className="text-[10px] font-mono text-muted-foreground">{agent.employeeId}</span>
+                                {agent.locationMatch === 'city' && (
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                                    <MapPin className="h-2.5 w-2.5" />Same City
+                                  </span>
+                                )}
+                                {agent.locationMatch === 'state' && (
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                    <MapPin className="h-2.5 w-2.5" />Same State
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {(agent.city || agent.state) && (
+                                  <span className="text-[11px] text-muted-foreground">
+                                    {[agent.city, agent.state].filter(Boolean).join(', ')}
+                                  </span>
+                                )}
+                                {!agent.city && agent.region && (
+                                  <span className="text-[11px] text-muted-foreground">{agent.region}</span>
+                                )}
+                                <span className="text-[10px] text-muted-foreground/50">·</span>
+                                <span className="text-[11px] text-muted-foreground">
+                                  {agent.activeCaseCount === 0 ? 'No active cases' : `${agent.activeCaseCount} active case${agent.activeCaseCount !== 1 ? 's' : ''}`}
+                                </span>
+                              </div>
+                              {agent.expertise?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {agent.expertise.slice(0, 3).map((e: string) => (
+                                    <span key={e} className="text-[9px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">{e}</span>
+                                  ))}
+                                  {agent.expertise.length > 3 && (
+                                    <span className="text-[9px] text-muted-foreground">+{agent.expertise.length - 3}</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {isSelected && <CheckCircle2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
 
@@ -392,6 +481,7 @@ export default function CasesPage() {
                 placeholder="Add assignment notes…"
                 value={assignmentNotes}
                 onChange={(e) => setAssignmentNotes(e.target.value)}
+                rows={2}
               />
             </div>
           </div>
@@ -399,7 +489,8 @@ export default function CasesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignDialog(false)} disabled={isAssigning}>Cancel</Button>
             <Button onClick={handleAssign} disabled={!selectedAgent || isAssigning}>
-              {isAssigning ? 'Saving…' : selectedCase?.status === 'NEW' ? 'Assign Case' : 'Reassign Case'}
+              {isAssigning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isAssigning ? 'Assigning…' : selectedCase?.status === 'NEW' ? 'Assign Case' : 'Reassign Case'}
             </Button>
           </DialogFooter>
         </DialogContent>

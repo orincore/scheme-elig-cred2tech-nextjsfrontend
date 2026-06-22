@@ -32,10 +32,15 @@ function fmtTimeIST(date: Date) { return date.toLocaleTimeString('en-IN', { time
 
 function fmt(ms: number) {
   if (ms <= 0) return '0m';
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  const totalMin = Math.floor(ms / 60000);
+  const d = Math.floor(totalMin / 1440);
+  const h = Math.floor((totalMin % 1440) / 60);
+  const m = totalMin % 60;
+  const parts: string[] = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0 || parts.length === 0) parts.push(`${m}m`);
+  return parts.join(' ');
 }
 
 // ── Computation (step function WITH carryover) ─────────────────────────────────

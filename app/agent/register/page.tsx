@@ -85,8 +85,7 @@ export default function AgentRegisterPage() {
 
     setIsFetchingPincode(true);
     try {
-      let data = await pincodeService.getPincodeData(pincode);
-      if (!data) data = pincodeService.getPincodeDataFallback(pincode);
+      const data = await pincodeService.getPincodeData(pincode);
       if (data) {
         set({ district: data.city, state: data.state });
         setErrors((p) => ({ ...p, pincode: '', state: '', city: '' }));

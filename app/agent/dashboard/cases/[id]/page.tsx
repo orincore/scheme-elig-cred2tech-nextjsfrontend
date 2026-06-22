@@ -26,10 +26,14 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { RequestDocumentsDialog } from '@/components/cases/RequestDocumentsDialog';
+import { meetingPlatformLabel, formatMeetingDateTime, CaseMeeting } from '@/lib/meetingUtils';
+import { AgreementCard, AgreementInfo } from '@/components/cases/AgreementCard';
+import { SignAgreementDialog } from '@/components/cases/SignAgreementDialog';
 import {
   ArrowLeft,
   Building2,
   Calendar,
+  CalendarClock,
   Phone,
   Mail,
   MapPin,
@@ -47,6 +51,7 @@ import {
   RefreshCw,
   FilePlus,
   Inbox,
+  Link as LinkIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { DocumentViewer } from '@/components/ui/document-viewer';
@@ -272,6 +277,16 @@ export default function CaseDetailPage() {
   const [viewerUrl, setViewerUrl]   = useState<string | null>(null);
   const [viewerName, setViewerName] = useState<string>('');
 
+  // ── Meetings (read-only — scheduling is admin-only) ──────────────────────────
+  const [meetings, setMeetings]         = useState<CaseMeeting[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(false);
+  const upcomingMeeting = meetings.find((m) => m.status === 'SCHEDULED') || null;
+
+  // ── Service agreement ─────────────────────────────────────────────────────────
+  const [agreement, setAgreement] = useState<AgreementInfo | null>(null);
+  const [agreementLoading, setAgreementLoading] = useState(false);
+  const [signAgreementOpen, setSignAgreementOpen] = useState(false);
+
   // ── Fetch case details ───────────────────────────────────────────────────────
   const fetchCaseDetails = async (showSpinner = false) => {
     if (!caseId || !agent) return;
@@ -333,11 +348,57 @@ export default function CaseDetailPage() {
     }
   };
 
+  // ── Fetch meetings (read-only) ───────────────────────────────────────────────
+  const fetchMeetings = async () => {
+    if (!caseId) return;
+    setMeetingsLoading(true);
+    try {
+      const res = await casesApi.getAgentCaseMeetings(caseId);
+      if (res.success) setMeetings(res.meetings || []);
+    } catch (err: any) {
+      console.error('Failed to load meetings:', err.message || err);
+    } finally {
+      setMeetingsLoading(false);
+    }
+  };
+
+  // ── Fetch agreement ───────────────────────────────────────────────────────────
+  const fetchAgreement = async () => {
+    if (!caseId) return;
+    setAgreementLoading(true);
+    try {
+      const res = await casesApi.getAgentAgreement(caseId);
+      if (res.success) setAgreement(res.agreement || null);
+    } catch (err: any) {
+      console.error('Failed to load agreement:', err.message || err);
+    } finally {
+      setAgreementLoading(false);
+    }
+  };
+
+  const handleViewAgreement = async () => {
+    try {
+      const res = await casesApi.getAgentAgreementUrl(caseId);
+      if (!res.success || !res.fileUrl) {
+        toast.error('Agreement is temporarily unavailable. Please try again.');
+        return;
+      }
+      setViewerUrl(res.fileUrl);
+      setViewerName(agreement?.originalFileName || 'Service Agreement.pdf');
+    } catch (err: any) {
+      toast.error(err.message || 'Agreement is temporarily unavailable.');
+    }
+  };
+
+  const handleSignAgreement = (fullName: string) => casesApi.signAgreementAsAgent(caseId, fullName);
+
   // Fire both independently of agent context — JWT in localStorage handles auth
   useEffect(() => {
     if (!caseId) return;
     fetchDocuments();
     fetchDocumentRequests();
+    fetchMeetings();
+    fetchAgreement();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
@@ -594,6 +655,42 @@ export default function CaseDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Upcoming Meeting (read-only — scheduling is admin-only) */}
+          {(meetingsLoading || upcomingMeeting) && (
+            <div className="bg-card border border-border rounded-none overflow-hidden">
+              <SectionHeader icon={CalendarClock} title="Upcoming Meeting" />
+              <div className="px-5 py-4">
+                {meetingsLoading ? (
+                  <Skeleton className="h-16 w-full" />
+                ) : upcomingMeeting ? (
+                  <>
+                    <InfoRow label="Platform" value={meetingPlatformLabel(upcomingMeeting.platform)} />
+                    <InfoRow label="When"      value={formatMeetingDateTime(upcomingMeeting.scheduledAt)} />
+                    {upcomingMeeting.meetingLink && (
+                      <InfoRow label="Link" value={
+                        <a href={upcomingMeeting.meetingLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                          <LinkIcon className="h-3 w-3" />{upcomingMeeting.meetingLink}
+                        </a>
+                      } />
+                    )}
+                    {upcomingMeeting.dialInInfo && <InfoRow label="Dial-in" value={upcomingMeeting.dialInInfo} />}
+                    {upcomingMeeting.location && <InfoRow label="Location" value={upcomingMeeting.location} />}
+                    {upcomingMeeting.notes && <InfoRow label="Notes" value={upcomingMeeting.notes} />}
+                  </>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Service Agreement */}
+          <AgreementCard
+            role="agent"
+            agreement={agreement}
+            loading={agreementLoading}
+            onView={handleViewAgreement}
+            onSign={() => setSignAgreementOpen(true)}
+          />
 
           {/* Scheme */}
           <div className="bg-card border border-border rounded-none overflow-hidden">
@@ -898,6 +995,13 @@ export default function CaseDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SignAgreementDialog
+        open={signAgreementOpen}
+        onOpenChange={setSignAgreementOpen}
+        onSign={handleSignAgreement}
+        onDone={fetchAgreement}
+      />
 
       {viewerUrl && (
         <DocumentViewer

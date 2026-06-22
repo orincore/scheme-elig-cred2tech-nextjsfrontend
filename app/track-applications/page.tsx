@@ -29,7 +29,10 @@ import {
   RefreshCw,
   Trash2,
   Eye,
+  CalendarClock,
+  FileSignature,
 } from 'lucide-react';
+import { formatMeetingDateTime } from '@/lib/meetingUtils';
 import { casesApi, API_BASE_URL } from '@/lib/services/api';
 import { DocumentViewer } from '@/components/ui/document-viewer';
 
@@ -50,6 +53,8 @@ interface Case {
   agentNotes?: string;
   createdAt: string;
   updatedAt: string;
+  nextMeetingAt?: string;
+  agreementPendingSignature?: boolean;
 }
 
 interface DocumentRequest {
@@ -388,6 +393,18 @@ export default function TrackApplicationsPage() {
                             <span className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-1.5 py-0.5 rounded-full">
                               <AlertCircle className="h-2.5 w-2.5" />
                               {casePending.length} doc{casePending.length > 1 ? 's' : ''} needed
+                            </span>
+                          )}
+                          {c.nextMeetingAt && (
+                            <span className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded-full">
+                              <CalendarClock className="h-2.5 w-2.5" />
+                              Meeting {formatMeetingDateTime(c.nextMeetingAt)}
+                            </span>
+                          )}
+                          {c.agreementPendingSignature && (
+                            <span className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
+                              <FileSignature className="h-2.5 w-2.5" />
+                              Agreement: Signature pending
                             </span>
                           )}
                         </td>

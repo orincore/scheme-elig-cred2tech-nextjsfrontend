@@ -185,6 +185,18 @@ export const adminAuthApi = {
     body: JSON.stringify({ action, reason }),
   }, 'admin'),
 
+  adminUpdateAgent: (agentId: string, payload: { fullName?: string; email?: string; phone?: string; gender?: string; region?: string; pincode?: string; expertise?: string[]; certifications?: string[] }) =>
+    fetchApi(`/api/admin-auth/agents/${agentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }, 'admin'),
+
+  updateAgentSchemes: (agentId: string, payload: { supportedSchemes: string[]; city?: string; state?: string; pincode?: string }) =>
+    fetchApi(`/api/admin-auth/agents/${agentId}/schemes`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }, 'admin'),
+
   updateAgentAvailability: (agentId: string, availability: string) => fetchApi(`/api/admin-auth/agents/${agentId}/availability`, {
     method: 'PUT',
     body: JSON.stringify({ availability }),
@@ -366,6 +378,22 @@ export const casesApi = {
 
   getMsmeCaseDetails: (caseId: string, msmeUserId: number) => fetchApi(`/api/cases/msme/${caseId}?msmeUserId=${msmeUserId}`, {}, 'msme'),
 
+  getMsmeUpcomingMeeting: (caseId: string, msmeUserId: number) =>
+    fetchApi(`/api/cases/msme/${caseId}/meeting?msmeUserId=${msmeUserId}`, {}, 'msme'),
+
+  // Agreement (MSME)
+  getMsmeAgreement: (caseId: string, msmeUserId: number) =>
+    fetchApi(`/api/cases/msme/${caseId}/agreement?msmeUserId=${msmeUserId}`, {}, 'msme'),
+
+  getMsmeAgreementUrl: (caseId: string, msmeUserId: number, version?: 'signed' | 'original') =>
+    fetchApi(`/api/cases/msme/${caseId}/agreement/url?msmeUserId=${msmeUserId}${version ? `&version=${version}` : ''}`, {}, 'msme'),
+
+  signAgreementAsMsme: (caseId: string, msmeUserId: number, fullName: string) =>
+    fetchApi(`/api/cases/msme/${caseId}/agreement/sign?msmeUserId=${msmeUserId}`, {
+      method: 'POST',
+      body: JSON.stringify({ fullName }),
+    }, 'msme'),
+
   // Documents the MSME user uploaded for one of their own cases
   getMsmeCaseDocuments: (caseId: string, msmeUserId: number) =>
     fetchApi(`/api/cases/msme/${caseId}/documents?msmeUserId=${msmeUserId}`, {}, 'msme'),
@@ -381,6 +409,20 @@ export const casesApi = {
   },
   
   getAgentCaseDetails: (caseId: string) => fetchApi(`/api/cases/agent/${caseId}`, {}, 'agent'),
+
+  getAgentCaseMeetings: (caseId: string) => fetchApi(`/api/cases/agent/${caseId}/meetings`, {}, 'agent'),
+
+  // Agreement (agent)
+  getAgentAgreement: (caseId: string) => fetchApi(`/api/cases/agent/${caseId}/agreement`, {}, 'agent'),
+
+  getAgentAgreementUrl: (caseId: string, version?: 'signed' | 'original') =>
+    fetchApi(`/api/cases/agent/${caseId}/agreement/url${version ? `?version=${version}` : ''}`, {}, 'agent'),
+
+  signAgreementAsAgent: (caseId: string, fullName: string) =>
+    fetchApi(`/api/cases/agent/${caseId}/agreement/sign`, {
+      method: 'POST',
+      body: JSON.stringify({ fullName }),
+    }, 'agent'),
   
   updateCaseStatus: (caseId: string, status: string, notes?: string) => fetchApi(`/api/cases/agent/${caseId}/status`, {
     method: 'PUT',
@@ -487,6 +529,9 @@ export const casesApi = {
   
   getAdminCaseDetails: (caseId: string) => fetchApi(`/api/cases/admin/${caseId}`, {}, 'admin'),
   
+  getEligibleAgents: (caseId: string) =>
+    fetchApi(`/api/cases/${caseId}/eligible-agents`, {}, 'admin'),
+
   assignCase: (caseId: string, agentId: number, notes?: string) => fetchApi(`/api/cases/${caseId}/assign`, {
     method: 'PUT',
     body: JSON.stringify({ agentId, notes }),
@@ -511,6 +556,67 @@ export const casesApi = {
     method: 'PUT',
     body: JSON.stringify({ adminNotes, msmeNotes, noteType: 'ADMIN' }),
   }, 'admin'),
+
+  // Meetings (admin)
+  getCaseMeetings: (caseId: string) => fetchApi(`/api/cases/${caseId}/meetings`, {}, 'admin'),
+
+  // Agreement (admin)
+  getAgreement: (caseId: string) => fetchApi(`/api/cases/${caseId}/agreement`, {}, 'admin'),
+
+  getAgreementUrl: (caseId: string, version?: 'signed' | 'original') =>
+    fetchApi(`/api/cases/${caseId}/agreement/url${version ? `?version=${version}` : ''}`, {}, 'admin'),
+
+  uploadAgreement: async (caseId: string, file: File): Promise<any> => {
+    const token = getToken('admin');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/api/cases/${caseId}/agreement`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    if (response.status === 401) throw new Error('Invalid token');
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err?.message || `Upload failed: ${response.status}`);
+    }
+    return response.json();
+  },
+
+  removeAgreement: (caseId: string) => fetchApi(`/api/cases/${caseId}/agreement`, { method: 'DELETE' }, 'admin'),
+
+  scheduleMeeting: (caseId: string, dto: {
+    platform: string;
+    scheduledAt: string;
+    durationMinutes?: number;
+    meetingLink?: string;
+    dialInInfo?: string;
+    location?: string;
+    notes?: string;
+  }) => fetchApi(`/api/cases/${caseId}/meeting`, {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  }, 'admin'),
+
+  rescheduleMeeting: (caseId: string, meetingId: string, scheduledAt: string, reason?: string) =>
+    fetchApi(`/api/cases/${caseId}/meeting/${meetingId}/reschedule`, {
+      method: 'PUT',
+      body: JSON.stringify({ scheduledAt, reason }),
+    }, 'admin'),
+
+  cancelMeeting: (caseId: string, meetingId: string, reason?: string) =>
+    fetchApi(`/api/cases/${caseId}/meeting/${meetingId}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    }, 'admin'),
+
+  completeMeeting: (caseId: string, meetingId: string) =>
+    fetchApi(`/api/cases/${caseId}/meeting/${meetingId}/complete`, {
+      method: 'PUT',
+      body: JSON.stringify({}),
+    }, 'admin'),
 };
 
 export const msmeAuthApi = {
