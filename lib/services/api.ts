@@ -315,6 +315,10 @@ export const adminAuthApi = {
   getMsmeUserDetail: (id: string | number) =>
     fetchApi(`/api/admin-auth/msme-users/${id}`, {}, 'admin'),
 
+  // Stored eligibility snapshot for an MSME user (demo mode — no AI credits consumed).
+  getMsmeUserEligibilitySnapshot: (id: string | number) =>
+    fetchApi(`/api/admin-auth/msme-users/${id}/eligibility-snapshot`, {}, 'admin'),
+
   // Force-delete an MSME user and ALL their records (cases, businesses, snapshots…).
   forceDeleteMsmeUser: (id: string | number) =>
     fetchApi(`/api/admin-auth/msme-users/${id}/force`, { method: 'DELETE' }, 'admin'),

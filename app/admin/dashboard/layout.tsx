@@ -30,6 +30,7 @@ import {
   IndianRupee,
   Receipt,
   FlaskConical,
+  Play,
   type LucideIcon,
 } from 'lucide-react';
 interface NavItem {
@@ -90,6 +91,7 @@ export default function AdminDashboardLayout({
     { href: '/admin/dashboard/msme-users',      label: 'MSME Users',      icon: Building2 },
     { href: '/admin/dashboard/ai-usage',        label: 'AI Usage & Cost', icon: DollarSign },
     { href: '/admin/dashboard/ai-engine-tester', label: 'Engine Test Lab', icon: FlaskConical },
+    { href: '/demo',                              label: 'Client Demo',     icon: Play, exact: true },
     { href: '/admin/dashboard/scheme-ingestion', label: 'Scheme Ingestion', icon: DatabaseZap },
     { href: '/admin/dashboard/schemes',          label: 'Schemes',          icon: FileText },
     { href: '/admin/dashboard/categories',       label: 'Categories',       icon: FolderTree },

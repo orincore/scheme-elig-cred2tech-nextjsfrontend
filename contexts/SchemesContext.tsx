@@ -213,7 +213,7 @@ function toCacheItem(s: Scheme): any {
 // Cap the ineligible list we persist so the snapshot payload stays reasonable.
 const MAX_PERSIST_INELIGIBLE = 60;
 
-const SchemesContext = createContext<SchemesContextType | undefined>(undefined);
+export const SchemesContext = createContext<SchemesContextType | undefined>(undefined);
 
 export const SchemesProvider = ({ children }: { children: ReactNode }) => {
   const [schemes, setSchemes] = useState<Scheme[]>([]);
