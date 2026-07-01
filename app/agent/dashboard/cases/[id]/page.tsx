@@ -29,6 +29,7 @@ import { RequestDocumentsDialog } from '@/components/cases/RequestDocumentsDialo
 import { meetingPlatformLabel, formatMeetingDateTime, CaseMeeting } from '@/lib/meetingUtils';
 import { AgreementCard, AgreementInfo } from '@/components/cases/AgreementCard';
 import { SignAgreementDialog } from '@/components/cases/SignAgreementDialog';
+import { PaymentRequestDialog } from '@/components/cases/PaymentRequestDialog';
 import {
   ArrowLeft,
   Building2,
@@ -52,6 +53,7 @@ import {
   FilePlus,
   Inbox,
   Link as LinkIcon,
+  IndianRupee,
 } from 'lucide-react';
 import Link from 'next/link';
 import { DocumentViewer } from '@/components/ui/document-viewer';
@@ -156,6 +158,26 @@ interface DocumentRequest {
   presigned_url?: string;
   uploaded_file_name?: string;
 }
+
+interface PaymentRequest {
+  id: string | number;
+  category: string;
+  customTitle?: string | null;
+  title: string;
+  reason: string;
+  requestedAmount: number;
+  approvedAmount: number | null;
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'PAID';
+  rejectionReason?: string | null;
+  createdAt: string;
+}
+
+const PAYMENT_REQUEST_STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  PENDING_APPROVAL: { label: 'Pending Approval', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  APPROVED:          { label: 'Approved',         cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  REJECTED:          { label: 'Rejected',         cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  PAID:              { label: 'Paid',             cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+};
 
 const CASE_STATUSES = [
   { value: 'IN_PROGRESS', label: 'In Progress' },
@@ -287,6 +309,11 @@ export default function CaseDetailPage() {
   const [agreementLoading, setAgreementLoading] = useState(false);
   const [signAgreementOpen, setSignAgreementOpen] = useState(false);
 
+  // ── Payment requests ───────────────────────────────────────────────────────────
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
+  const [paymentRequestsLoading, setPaymentRequestsLoading] = useState(false);
+  const [paymentRequestOpen, setPaymentRequestOpen] = useState(false);
+
   // ── Fetch case details ───────────────────────────────────────────────────────
   const fetchCaseDetails = async (showSpinner = false) => {
     if (!caseId || !agent) return;
@@ -390,7 +417,26 @@ export default function CaseDetailPage() {
     }
   };
 
-  const handleSignAgreement = (fullName: string) => casesApi.signAgreementAsAgent(caseId, fullName);
+  const handleRequestSignOtp = (method: 'email' | 'mobile') => casesApi.requestSignOtpAsAgent(caseId, method);
+  const handleSignAgreement = (fullName: string, otp: string, otpMethod: 'email' | 'mobile') =>
+    casesApi.signAgreementAsAgent(caseId, fullName, otp, otpMethod);
+
+  // ── Fetch payment requests ────────────────────────────────────────────────────
+  const fetchPaymentRequests = async () => {
+    if (!caseId) return;
+    setPaymentRequestsLoading(true);
+    try {
+      const res = await casesApi.getAgentPaymentRequests(caseId);
+      if (res.success) setPaymentRequests(res.paymentRequests || []);
+    } catch (err: any) {
+      console.error('Failed to load payment requests:', err.message || err);
+    } finally {
+      setPaymentRequestsLoading(false);
+    }
+  };
+
+  const handleCreatePaymentRequest = (dto: { category: string; customTitle?: string; reason: string; amount: number }) =>
+    casesApi.createPaymentRequest(caseId, dto);
 
   // Fire both independently of agent context — JWT in localStorage handles auth
   useEffect(() => {
@@ -399,6 +445,7 @@ export default function CaseDetailPage() {
     fetchDocumentRequests();
     fetchMeetings();
     fetchAgreement();
+    fetchPaymentRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
@@ -691,6 +738,54 @@ export default function CaseDetailPage() {
             onView={handleViewAgreement}
             onSign={() => setSignAgreementOpen(true)}
           />
+
+          {/* Payment Requests */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader
+              icon={IndianRupee}
+              title="Payment Requests"
+              action={
+                <button className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md border border-border text-muted-foreground bg-muted/20 hover:text-foreground hover:bg-muted/50 transition-colors" onClick={() => setPaymentRequestOpen(true)}>
+                  <IndianRupee className="h-3 w-3" />Request Payment
+                </button>
+              }
+            />
+            <div className="px-5 py-3">
+              {paymentRequestsLoading ? (
+                <div className="space-y-2 py-2"><Skeleton className="h-10 w-full" /></div>
+              ) : paymentRequests.length > 0 ? (
+                <div className="divide-y divide-border/50">
+                  {paymentRequests.map((pr) => (
+                    <div key={pr.id} className="flex items-start gap-3 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          <p className="text-sm font-medium text-foreground truncate">{pr.title}</p>
+                          <span className={`${PILL} ${PAYMENT_REQUEST_STATUS_CFG[pr.status]?.cls ?? 'bg-muted text-muted-foreground'}`}>
+                            {PAYMENT_REQUEST_STATUS_CFG[pr.status]?.label ?? pr.status}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground truncate">{pr.reason}</p>
+                        {pr.status === 'REJECTED' && pr.rejectionReason && (
+                          <p className="text-[11px] text-destructive mt-1">Reason: {pr.rejectionReason}</p>
+                        )}
+                        <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                          {new Date(pr.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold text-foreground shrink-0">
+                        ₹{pr.approvedAmount ?? pr.requestedAmount}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/50">
+                  <IndianRupee className="h-8 w-8 mb-2" />
+                  <p className="text-sm">No payment requests yet</p>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Scheme */}
           <div className="bg-card border border-border rounded-none overflow-hidden">
@@ -999,8 +1094,16 @@ export default function CaseDetailPage() {
       <SignAgreementDialog
         open={signAgreementOpen}
         onOpenChange={setSignAgreementOpen}
+        onRequestOtp={handleRequestSignOtp}
         onSign={handleSignAgreement}
         onDone={fetchAgreement}
+      />
+
+      <PaymentRequestDialog
+        open={paymentRequestOpen}
+        onOpenChange={setPaymentRequestOpen}
+        onSubmit={handleCreatePaymentRequest}
+        onDone={fetchPaymentRequests}
       />
 
       {viewerUrl && (

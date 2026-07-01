@@ -388,15 +388,29 @@ export const casesApi = {
   getMsmeAgreementUrl: (caseId: string, msmeUserId: number, version?: 'signed' | 'original') =>
     fetchApi(`/api/cases/msme/${caseId}/agreement/url?msmeUserId=${msmeUserId}${version ? `&version=${version}` : ''}`, {}, 'msme'),
 
-  signAgreementAsMsme: (caseId: string, msmeUserId: number, fullName: string) =>
+  requestSignOtpAsMsme: (caseId: string, msmeUserId: number, method: 'email' | 'mobile') =>
+    fetchApi(`/api/cases/msme/${caseId}/agreement/request-sign-otp?msmeUserId=${msmeUserId}`, {
+      method: 'POST',
+      body: JSON.stringify({ method }),
+    }, 'msme'),
+
+  signAgreementAsMsme: (caseId: string, msmeUserId: number, fullName: string, otp: string, otpMethod: 'email' | 'mobile') =>
     fetchApi(`/api/cases/msme/${caseId}/agreement/sign?msmeUserId=${msmeUserId}`, {
       method: 'POST',
-      body: JSON.stringify({ fullName }),
+      body: JSON.stringify({ fullName, otp, otpMethod }),
     }, 'msme'),
 
   // Documents the MSME user uploaded for one of their own cases
   getMsmeCaseDocuments: (caseId: string, msmeUserId: number) =>
     fetchApi(`/api/cases/msme/${caseId}/documents?msmeUserId=${msmeUserId}`, {}, 'msme'),
+
+  // Payment requests (MSME) — only ever returns APPROVED/PAID rows
+  getMsmePaymentRequests: (caseId: string, msmeUserId: number) =>
+    fetchApi(`/api/cases/msme/${caseId}/payment-requests?msmeUserId=${msmeUserId}`, {}, 'msme'),
+
+  // Aggregate across ALL of this MSME's cases — for the applications list page
+  getMsmePaymentRequestsAll: (msmeUserId: number) =>
+    fetchApi(`/api/cases/msme/my-payment-requests?msmeUserId=${msmeUserId}`, {}, 'msme'),
 
   deleteCase: (caseId: string, msmeUserId: number) => fetchApi(`/api/cases/msme/${caseId}?msmeUserId=${msmeUserId}`, {
     method: 'DELETE',
@@ -418,12 +432,29 @@ export const casesApi = {
   getAgentAgreementUrl: (caseId: string, version?: 'signed' | 'original') =>
     fetchApi(`/api/cases/agent/${caseId}/agreement/url${version ? `?version=${version}` : ''}`, {}, 'agent'),
 
-  signAgreementAsAgent: (caseId: string, fullName: string) =>
+  requestSignOtpAsAgent: (caseId: string, method: 'email' | 'mobile') =>
+    fetchApi(`/api/cases/agent/${caseId}/agreement/request-sign-otp`, {
+      method: 'POST',
+      body: JSON.stringify({ method }),
+    }, 'agent'),
+
+  signAgreementAsAgent: (caseId: string, fullName: string, otp: string, otpMethod: 'email' | 'mobile') =>
     fetchApi(`/api/cases/agent/${caseId}/agreement/sign`, {
       method: 'POST',
-      body: JSON.stringify({ fullName }),
+      body: JSON.stringify({ fullName, otp, otpMethod }),
     }, 'agent'),
-  
+
+  // ── Payment requests (agent) ────────────────────────────────────────────────
+  createPaymentRequest: (caseId: string, dto: { category: string; customTitle?: string; reason: string; amount: number }) =>
+    fetchApi(`/api/cases/agent/${caseId}/payment-requests`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }, 'agent'),
+
+  getAgentPaymentRequests: (caseId: string) =>
+    fetchApi(`/api/cases/agent/${caseId}/payment-requests`, {}, 'agent'),
+
+
   updateCaseStatus: (caseId: string, status: string, notes?: string) => fetchApi(`/api/cases/agent/${caseId}/status`, {
     method: 'PUT',
     body: JSON.stringify({ status, notes }),
@@ -561,6 +592,9 @@ export const casesApi = {
   getCaseMeetings: (caseId: string) => fetchApi(`/api/cases/${caseId}/meetings`, {}, 'admin'),
 
   // Agreement (admin)
+  generateAgreement: (caseId: string) =>
+    fetchApi(`/api/cases/${caseId}/agreement/generate`, { method: 'POST' }, 'admin'),
+
   getAgreement: (caseId: string) => fetchApi(`/api/cases/${caseId}/agreement`, {}, 'admin'),
 
   getAgreementUrl: (caseId: string, version?: 'signed' | 'original') =>
@@ -586,6 +620,19 @@ export const casesApi = {
   },
 
   removeAgreement: (caseId: string) => fetchApi(`/api/cases/${caseId}/agreement`, { method: 'DELETE' }, 'admin'),
+
+  // ── Payment requests (admin) ────────────────────────────────────────────────
+  getAllPaymentRequestsForAdmin: (status?: string) =>
+    fetchApi(`/api/cases/admin/payment-requests${status ? `?status=${status}` : ''}`, {}, 'admin'),
+
+  getPaymentRequestsForAdmin: (caseId: string) =>
+    fetchApi(`/api/cases/${caseId}/payment-requests`, {}, 'admin'),
+
+  reviewPaymentRequest: (caseId: string, requestId: string, dto: { action: 'APPROVE' | 'REJECT'; amount?: number; rejectionReason?: string }) =>
+    fetchApi(`/api/cases/${caseId}/payment-requests/${requestId}/review`, {
+      method: 'PUT',
+      body: JSON.stringify(dto),
+    }, 'admin'),
 
   scheduleMeeting: (caseId: string, dto: {
     platform: string;

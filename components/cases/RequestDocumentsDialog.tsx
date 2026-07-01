@@ -4,12 +4,15 @@ import { useState } from 'react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { FilePlus, Loader2, Plus, X } from 'lucide-react';
+import TravelingBorderButton from '@/components/ui/traveling-border-button';
+import {
+  fieldLabelClass,
+  fieldWrapperClass,
+  fieldInputClass,
+} from '@/components/ui/underline-field';
+import { FilePlus, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 interface DocRow {
   name: string;
@@ -19,20 +22,10 @@ interface DocRow {
 interface RequestDocumentsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /**
-   * Create ONE document request. Resolves with the API result; a falsy
-   * `success` (or a throw) is treated as a failure for that row.
-   */
   onCreate: (name: string, description?: string) => Promise<{ success?: boolean } | any>;
-  /** Called once after the batch is sent, so the caller can refresh its list. */
   onDone?: () => void | Promise<void>;
 }
 
-/**
- * Shared "Request Documents" dialog for the admin + agent case pages. Lets the
- * user request MULTIPLE documents in one go: add as many rows as needed, then
- * submit — each row is sent via `onCreate` (the API takes one at a time).
- */
 export function RequestDocumentsDialog({
   open, onOpenChange, onCreate, onDone,
 }: RequestDocumentsDialogProps) {
@@ -50,7 +43,7 @@ export function RequestDocumentsDialog({
   const validRows = rows.filter((r) => r.name.trim());
 
   const handleOpenChange = (next: boolean) => {
-    if (submitting) return;            // don't close mid-send
+    if (submitting) return;
     if (!next) reset();
     onOpenChange(next);
   };
@@ -69,7 +62,6 @@ export function RequestDocumentsDialog({
       }
     }
     setSubmitting(false);
-
     if (ok === 0) { toast.error('Could not send the document requests. Please try again.'); return; }
     toast.success(
       `${ok} document request${ok > 1 ? 's' : ''} sent to MSME${fail ? ` · ${fail} failed` : ''}`,
@@ -83,70 +75,114 @@ export function RequestDocumentsDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FilePlus className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2.5 text-[#0a1628] dark:text-[#e6edf7]">
+            <div className="flex items-center justify-center w-8 h-8 bg-indigo-50 dark:bg-indigo-900/30 shrink-0">
+              <FilePlus className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            </div>
             Request Documents
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-[13px] text-[#4a5d73] dark:text-[#94a3b8]">
             Request one or more documents — the MSME sees them on their application tracking page.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 py-2 max-h-[55vh] overflow-y-auto">
+        <div className="space-y-3 py-1 max-h-[55vh] overflow-y-auto pr-0.5">
           {rows.map((row, i) => (
-            <div key={i} className="rounded-lg border border-border p-3 space-y-2">
+            <div
+              key={i}
+              className="border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-4"
+            >
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold text-muted-foreground">Document {i + 1}</Label>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#4a5d73] dark:text-[#94a3b8]">
+                  Document {i + 1}
+                </span>
                 {rows.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeRow(i)}
                     disabled={submitting}
-                    className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                    className="p-1 text-[#4a5d73] dark:text-[#94a3b8] hover:text-red-500 dark:hover:text-red-400 transition-colors disabled:opacity-40"
                     title="Remove"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
-              <Input
-                placeholder="Document name e.g. GST Certificate, Aadhaar…"
-                value={row.name}
-                onChange={(e) => update(i, { name: e.target.value })}
-                className="h-9 text-sm"
-                disabled={submitting}
-              />
-              <Textarea
-                placeholder="Instructions (optional)…"
-                value={row.description}
-                onChange={(e) => update(i, { description: e.target.value })}
-                rows={2}
-                disabled={submitting}
-              />
+
+              <div>
+                <label className={fieldLabelClass}>Document Name *</label>
+                <div className={fieldWrapperClass(false, submitting)}>
+                  <input
+                    type="text"
+                    placeholder="e.g. GST Certificate, Aadhaar…"
+                    value={row.name}
+                    onChange={(e) => update(i, { name: e.target.value })}
+                    disabled={submitting}
+                    className={fieldInputClass}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={fieldLabelClass}>Instructions (optional)</label>
+                <div className={cn(
+                  'pb-2 border-b transition-colors',
+                  'border-gray-200 dark:border-gray-700 focus-within:border-indigo-600 dark:focus-within:border-indigo-400',
+                  submitting && 'opacity-60',
+                )}>
+                  <textarea
+                    placeholder="Any specific instructions for the MSME…"
+                    value={row.description}
+                    onChange={(e) => update(i, { description: e.target.value })}
+                    disabled={submitting}
+                    rows={2}
+                    className="w-full bg-transparent border-0 outline-none resize-none text-[#0a1628] dark:text-[#e6edf7] text-[15px] font-semibold p-0 focus:ring-0 placeholder-gray-400 dark:placeholder-gray-600"
+                  />
+                </div>
+              </div>
             </div>
           ))}
 
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             onClick={addRow}
             disabled={submitting}
-            className="w-full gap-1.5 border-dashed"
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-border text-[13px] font-semibold text-[#4a5d73] dark:text-[#94a3b8] hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors disabled:opacity-40"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
             Add another document
-          </Button>
+          </button>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => handleOpenChange(false)} disabled={submitting}>
+        <DialogFooter className="flex-row items-center justify-between sm:justify-between gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => handleOpenChange(false)}
+            disabled={submitting}
+            className="text-[13px] font-semibold text-[#4a5d73] dark:text-[#94a3b8] hover:text-[#0a1628] dark:hover:text-white transition-colors disabled:opacity-40"
+          >
             Cancel
-          </Button>
-          <Button size="sm" onClick={handleSubmit} disabled={validRows.length === 0 || submitting}>
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Send {validRows.length > 0 ? `${validRows.length} ` : ''}Request{validRows.length === 1 ? '' : 's'}
-          </Button>
+          </button>
+          <TravelingBorderButton
+            onClick={handleSubmit}
+            disabled={validRows.length === 0 || submitting}
+            size="sm"
+            solid
+            showIcon={!submitting}
+            className="rounded-[10px] min-w-[140px]"
+          >
+            {submitting ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin inline-block" />
+                Sending…
+              </span>
+            ) : (
+              <span>
+                Send {validRows.length > 0 ? `${validRows.length} ` : ''}
+                Request{validRows.length === 1 ? '' : 's'}
+              </span>
+            )}
+          </TravelingBorderButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

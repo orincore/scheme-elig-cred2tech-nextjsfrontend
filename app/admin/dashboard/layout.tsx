@@ -28,6 +28,8 @@ import {
   FileText,
   FolderTree,
   IndianRupee,
+  Receipt,
+  FlaskConical,
   type LucideIcon,
 } from 'lucide-react';
 interface NavItem {
@@ -84,8 +86,10 @@ export default function AdminDashboardLayout({
     { href: '/admin/dashboard/agents',          label: 'Agents',          icon: Users,        badge: pendingCount },
     { href: '/admin/dashboard/approvals',       label: 'Approvals',       icon: UserCheck,    badge: pendingCount },
     { href: '/admin/dashboard/cases',           label: 'Cases',           icon: Briefcase },
+    { href: '/admin/dashboard/payment-requests', label: 'Payment Requests', icon: Receipt },
     { href: '/admin/dashboard/msme-users',      label: 'MSME Users',      icon: Building2 },
     { href: '/admin/dashboard/ai-usage',        label: 'AI Usage & Cost', icon: DollarSign },
+    { href: '/admin/dashboard/ai-engine-tester', label: 'Engine Test Lab', icon: FlaskConical },
     { href: '/admin/dashboard/scheme-ingestion', label: 'Scheme Ingestion', icon: DatabaseZap },
     { href: '/admin/dashboard/schemes',          label: 'Schemes',          icon: FileText },
     { href: '/admin/dashboard/categories',       label: 'Categories',       icon: FolderTree },

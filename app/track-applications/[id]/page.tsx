@@ -20,6 +20,8 @@ import { DocumentViewer } from '@/components/ui/document-viewer';
 import { meetingPlatformLabel, formatMeetingDateTime, CaseMeeting } from '@/lib/meetingUtils';
 import { AgreementCard, AgreementInfo } from '@/components/cases/AgreementCard';
 import { SignAgreementDialog } from '@/components/cases/SignAgreementDialog';
+import { payCaseRequest } from '@/lib/razorpayCheckout';
+import { usePendingActions } from '@/contexts/PendingActionsContext';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -46,6 +48,8 @@ import {
   Eye,
   FolderOpen,
   Link as LinkIcon,
+  IndianRupee,
+  CheckCircle2,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -121,6 +125,18 @@ interface CaseDetails {
     oldValue?: any;
     newValue?: any;
   }>;
+}
+
+interface CasePaymentRequest {
+  id: string | number;
+  category: string;
+  customTitle?: string | null;
+  title: string;
+  reason: string;
+  requestedAmount: number;
+  approvedAmount: number | null;
+  status: 'APPROVED' | 'PAID';
+  createdAt: string;
 }
 
 interface DocumentRequest {
@@ -225,7 +241,8 @@ function formatBytes(bytes: number): string {
 export default function MsmeCaseDetailPage() {
   const params  = useParams();
   const router  = useRouter();
-  const { userId, authStep } = useMsmeAuth();
+  const { userId, authStep, token, userProfile, mobile } = useMsmeAuth();
+  const { refresh: refreshPendingActions } = usePendingActions();
   const caseId  = params.id as string;
 
   const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
@@ -242,6 +259,9 @@ export default function MsmeCaseDetailPage() {
   const [signAgreementOpen, setSignAgreementOpen] = useState(false);
   const [viewerUrl, setViewerUrl]         = useState<string | null>(null);
   const [viewerName, setViewerName]       = useState<string>('');
+
+  const [paymentRequests, setPaymentRequests] = useState<CasePaymentRequest[]>([]);
+  const [payingRequestId, setPayingRequestId] = useState<string | null>(null);
 
   const [uploadOpen, setUploadOpen]     = useState(false);
   const [uploadFile, setUploadFile]     = useState<File | null>(null);
@@ -340,13 +360,49 @@ export default function MsmeCaseDetailPage() {
     }
   };
 
-  const handleSignAgreement = (fullName: string) =>
-    casesApi.signAgreementAsMsme(caseId, parseInt(userId!), fullName);
+  const handleRequestSignOtp = (method: 'email' | 'mobile') =>
+    casesApi.requestSignOtpAsMsme(caseId, parseInt(userId!), method);
+  const handleSignAgreement = (fullName: string, otp: string, otpMethod: 'email' | 'mobile') =>
+    casesApi.signAgreementAsMsme(caseId, parseInt(userId!), fullName, otp, otpMethod);
+
+  const fetchPaymentRequests = async () => {
+    if (!userId || !caseId) return;
+    try {
+      const res = await casesApi.getMsmePaymentRequests(caseId, parseInt(userId));
+      if (res.success) setPaymentRequests(res.paymentRequests || []);
+    } catch (err: any) {
+      console.error('Failed to load payment requests:', err.message);
+    }
+  };
+
+  const handlePayCaseRequest = async (req: CasePaymentRequest) => {
+    const authToken = token || (typeof window !== 'undefined' ? sessionStorage.getItem('msme_auth_token') : '') || '';
+    setPayingRequestId(String(req.id));
+    try {
+      const result = await payCaseRequest({
+        token: authToken,
+        requestId: req.id,
+        description: req.title,
+        prefillName: userProfile?.name,
+        prefillEmail: userProfile?.email,
+        mobile: mobile || undefined,
+      });
+      if (result.success) {
+        toast.success('Payment successful');
+        await Promise.all([fetchPaymentRequests(), fetchCaseDetails()]);
+        refreshPendingActions();
+      } else if (!result.cancelled) {
+        toast.error(result.error || 'Payment failed. Please try again.');
+      }
+    } finally {
+      setPayingRequestId(null);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
       if (!userId) { setIsLoading(false); return; }
-      await Promise.all([fetchCaseDetails(), fetchDocumentRequests(), fetchCaseDocuments(), fetchUpcomingMeeting(), fetchAgreement()]);
+      await Promise.all([fetchCaseDetails(), fetchDocumentRequests(), fetchCaseDocuments(), fetchUpcomingMeeting(), fetchAgreement(), fetchPaymentRequests()]);
       setIsLoading(false);
     };
     if (authStep === 'authenticated') load();
@@ -392,6 +448,7 @@ export default function MsmeCaseDetailPage() {
       setActiveRequest(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       await Promise.all([fetchDocumentRequests(), fetchCaseDetails(), fetchCaseDocuments()]);
+      refreshPendingActions();
     } catch (err: any) {
       toast.error(err.message || 'Upload failed. Please try again.');
     } finally {
@@ -655,6 +712,48 @@ export default function MsmeCaseDetailPage() {
             onSign={() => setSignAgreementOpen(true)}
           />
         </div>
+
+        {/* ─── Payment Requests ──────────────────────────────────────────────── */}
+        {paymentRequests.length > 0 && (
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border">
+              <h3 className="text-[13px] font-bold text-foreground flex items-center gap-2">
+                <IndianRupee className="h-4 w-4 text-muted-foreground" />
+                Payment Requests
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Payments requested by your agent for this case</p>
+            </div>
+            <div className="divide-y divide-border">
+              {paymentRequests.map((req) => {
+                const amount = req.approvedAmount ?? req.requestedAmount;
+                return (
+                  <div key={req.id} className="flex items-center justify-between gap-4 px-5 py-3.5 flex-wrap">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{req.title} — ₹{amount}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{req.reason}</p>
+                    </div>
+                    {req.status === 'PAID' ? (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 shrink-0">
+                        <CheckCircle2 className="h-3.5 w-3.5" />Paid
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="gap-1.5 shrink-0"
+                        onClick={() => handlePayCaseRequest(req)}
+                        disabled={payingRequestId === String(req.id)}
+                      >
+                        {payingRequestId === String(req.id)
+                          ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Processing…</>
+                          : <><CreditCard className="h-3.5 w-3.5" />Pay Now</>}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ─── Business / MSME info ─────────────────────────────────────────── */}
         <div className="grid md:grid-cols-2 gap-5">
@@ -1028,6 +1127,7 @@ export default function MsmeCaseDetailPage() {
       <SignAgreementDialog
         open={signAgreementOpen}
         onOpenChange={setSignAgreementOpen}
+        onRequestOtp={handleRequestSignOtp}
         onSign={handleSignAgreement}
         onDone={fetchAgreement}
       />

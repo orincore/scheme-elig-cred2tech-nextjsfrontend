@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import PageTransition from '@/components/ui/page-transition';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
+import { PendingActionsProvider, usePendingActions } from '@/contexts/PendingActionsContext';
 import { BrandLogo } from '@/components/brand-logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import BusinessSwitcher from '@/components/dashboard/BusinessSwitcher';
@@ -116,7 +117,16 @@ function UserAvatar({ name, mobile, gender }: { name?: string | null; mobile?: s
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
+  return (
+    <PendingActionsProvider>
+      <DashboardLayoutInner>{children}</DashboardLayoutInner>
+    </PendingActionsProvider>
+  );
+}
+
+function DashboardLayoutInner({ children }: { children: ReactNode }) {
   const { logout, userProfile, token, mobile } = useMsmeAuth();
+  const { pendingCount } = usePendingActions();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -168,6 +178,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         {NAV.map((item) => {
           const active = isActive(item);
           const Icon = item.icon;
+          const badge = item.href === '/track-applications' && pendingCount > 0 ? pendingCount : undefined;
           return (
             <Link
               key={item.href}
@@ -181,6 +192,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             >
               <Icon className={`size-[18px] shrink-0 ${active ? 'text-primary' : ''}`} />
               <span className="flex-1">{item.label}</span>
+              {badge ? (
+                <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground">
+                  {badge}
+                </span>
+              ) : null}
             </Link>
           );
         })}

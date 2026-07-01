@@ -4,15 +4,15 @@ import { useEffect, useState } from 'react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import TravelingBorderButton from '@/components/ui/traveling-border-button';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { CalendarClock, Loader2 } from 'lucide-react';
+  fieldLabelClass,
+  fieldWrapperClass,
+  fieldInputClass,
+} from '@/components/ui/underline-field';
+import { CalendarClock, ChevronDown, Sparkles, Video } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 export const MEETING_PLATFORMS = [
   { value: 'GOOGLE_MEET', label: 'Google Meet' },
@@ -23,11 +23,12 @@ export const MEETING_PLATFORMS = [
   { value: 'OTHER', label: 'Other' },
 ] as const;
 
-const LINK_PLATFORMS = new Set(['GOOGLE_MEET', 'ZOOM', 'MS_TEAMS', 'OTHER']);
+const AUTO_LINK_PLATFORMS = new Set(['GOOGLE_MEET']);
+const LINK_PLATFORMS = new Set(['ZOOM', 'MS_TEAMS', 'OTHER']);
 
 export interface MeetingFormValues {
   platform: string;
-  scheduledAt: string; // ISO string
+  scheduledAt: string;
   durationMinutes?: number;
   meetingLink?: string;
   dialInInfo?: string;
@@ -40,7 +41,6 @@ interface MeetingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: 'schedule' | 'reschedule';
-  /** For reschedule mode, the meeting's current platform (shown read-only). */
   currentPlatform?: string;
   onSubmit: (values: MeetingFormValues) => Promise<{ success?: boolean; message?: string } | any>;
   onDone?: () => void | Promise<void>;
@@ -49,6 +49,75 @@ interface MeetingDialogProps {
 function toDatetimeLocalValue(date: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function UnderlineSelect({
+  label,
+  value,
+  onChange,
+  options,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: readonly { value: string; label: string }[];
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className={fieldLabelClass}>{label}</label>
+      <div className={fieldWrapperClass(false, disabled)}>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          className={cn(fieldInputClass, 'appearance-none cursor-pointer')}
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <ChevronDown className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0 pointer-events-none" />
+      </div>
+    </div>
+  );
+}
+
+function UnderlineTextarea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 2,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className={fieldLabelClass}>{label}</label>
+      <div className={cn(
+        'pb-2 border-b transition-colors',
+        'border-gray-200 dark:border-gray-700 focus-within:border-indigo-600 dark:focus-within:border-indigo-400',
+        disabled && 'opacity-60',
+      )}>
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={rows}
+          disabled={disabled}
+          className="w-full bg-transparent border-0 outline-none resize-none text-[#0a1628] dark:text-[#e6edf7] text-[15px] font-semibold p-0 focus:ring-0 placeholder-gray-400 dark:placeholder-gray-600"
+        />
+      </div>
+    </div>
+  );
 }
 
 export function MeetingDialog({
@@ -90,6 +159,7 @@ export function MeetingDialog({
     onOpenChange(next);
   };
 
+  const isAutoLink = AUTO_LINK_PLATFORMS.has(platform);
   const needsLink = LINK_PLATFORMS.has(platform);
   const needsDialIn = platform === 'PHONE_CALL';
   const needsLocation = platform === 'IN_PERSON';
@@ -108,7 +178,6 @@ export function MeetingDialog({
       toast.error('Meeting time must be in the future');
       return;
     }
-
     setSubmitting(true);
     try {
       const res = await onSubmit({
@@ -140,136 +209,169 @@ export function MeetingDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CalendarClock className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2.5 text-[#0a1628] dark:text-[#e6edf7]">
+            <div className="flex items-center justify-center w-8 h-8 bg-indigo-50 dark:bg-indigo-900/30 shrink-0">
+              <CalendarClock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            </div>
             {mode === 'schedule' ? 'Schedule Meeting' : 'Reschedule Meeting'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-[13px] text-[#4a5d73] dark:text-[#94a3b8]">
             {mode === 'schedule'
-              ? 'Set up a meeting between the agent and the MSME applicant. Both will be notified by email.'
-              : 'Pick a new date and time. Both parties will be notified of the change by email.'}
+              ? 'Both the agent and the MSME applicant will receive an email and calendar invite.'
+              : 'Pick a new time — both parties will be notified of the change.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 py-2">
+        <div className="space-y-5 py-1">
           {mode === 'schedule' && (
-            <div className="space-y-1.5">
-              <Label htmlFor="meeting-platform">Platform</Label>
-              <Select value={platform} onValueChange={setPlatform} disabled={submitting}>
-                <SelectTrigger id="meeting-platform">
-                  <SelectValue placeholder="Select platform" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MEETING_PLATFORMS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="meeting-datetime">{mode === 'schedule' ? 'Date & Time' : 'New Date & Time'}</Label>
-            <Input
-              id="meeting-datetime"
-              type="datetime-local"
-              value={dateTime}
-              onChange={(e) => setDateTime(e.target.value)}
+            <UnderlineSelect
+              label="Platform"
+              value={platform}
+              onChange={setPlatform}
+              options={MEETING_PLATFORMS}
               disabled={submitting}
             />
+          )}
+
+          <div>
+            <label className={fieldLabelClass}>
+              {mode === 'schedule' ? 'Date & Time' : 'New Date & Time'}
+            </label>
+            <div className={fieldWrapperClass(false, submitting)}>
+              <input
+                type="datetime-local"
+                value={dateTime}
+                onChange={(e) => setDateTime(e.target.value)}
+                disabled={submitting}
+                className={cn(fieldInputClass, '[color-scheme:light] dark:[color-scheme:dark]')}
+              />
+            </div>
           </div>
 
           {mode === 'schedule' && (
             <>
-              <div className="space-y-1.5">
-                <Label htmlFor="meeting-duration">Duration (minutes)</Label>
-                <Input
-                  id="meeting-duration"
-                  type="number"
-                  min={5}
-                  step={5}
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  disabled={submitting}
-                />
+              <div>
+                <label className={fieldLabelClass}>Duration (minutes)</label>
+                <div className={fieldWrapperClass(false, submitting)}>
+                  <input
+                    type="number"
+                    min={5}
+                    step={5}
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    disabled={submitting}
+                    className={fieldInputClass}
+                  />
+                </div>
               </div>
 
+              {isAutoLink && (
+                <div className="flex items-start gap-2.5 border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50/70 dark:bg-indigo-900/20 px-3.5 py-2.5">
+                  <Sparkles className="h-3.5 w-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                  <p className="text-[12px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                    Google Meet link will be <span className="font-semibold">auto-generated</span> — calendar invites sent directly to both parties.
+                  </p>
+                </div>
+              )}
+
               {needsLink && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="meeting-link">Meeting Link</Label>
-                  <Input
-                    id="meeting-link"
-                    placeholder="https://meet.google.com/..."
-                    value={meetingLink}
-                    onChange={(e) => setMeetingLink(e.target.value)}
-                    disabled={submitting}
-                  />
+                <div>
+                  <label className={fieldLabelClass}>Meeting Link</label>
+                  <div className={fieldWrapperClass(false, submitting)}>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={meetingLink}
+                      onChange={(e) => setMeetingLink(e.target.value)}
+                      disabled={submitting}
+                      className={fieldInputClass}
+                    />
+                    <Video className="h-4 w-4 text-gray-400 shrink-0" />
+                  </div>
                 </div>
               )}
 
               {needsDialIn && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="meeting-dialin">Dial-in / Phone Number</Label>
-                  <Input
-                    id="meeting-dialin"
-                    placeholder="+91 98765 43210"
-                    value={dialInInfo}
-                    onChange={(e) => setDialInInfo(e.target.value)}
-                    disabled={submitting}
-                  />
+                <div>
+                  <label className={fieldLabelClass}>Dial-in / Phone Number</label>
+                  <div className={fieldWrapperClass(false, submitting)}>
+                    <input
+                      type="tel"
+                      placeholder="+91 98765 43210"
+                      value={dialInInfo}
+                      onChange={(e) => setDialInInfo(e.target.value)}
+                      disabled={submitting}
+                      className={fieldInputClass}
+                    />
+                  </div>
                 </div>
               )}
 
               {needsLocation && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="meeting-location">Location</Label>
-                  <Input
-                    id="meeting-location"
-                    placeholder="Office address..."
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    disabled={submitting}
-                  />
+                <div>
+                  <label className={fieldLabelClass}>Location</label>
+                  <div className={fieldWrapperClass(false, submitting)}>
+                    <input
+                      type="text"
+                      placeholder="Office address..."
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      disabled={submitting}
+                      className={fieldInputClass}
+                    />
+                  </div>
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <Label htmlFor="meeting-notes">Notes (optional)</Label>
-                <Textarea
-                  id="meeting-notes"
-                  placeholder="Agenda or anything to prepare..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                  disabled={submitting}
-                />
-              </div>
+              <UnderlineTextarea
+                label="Notes (optional)"
+                value={notes}
+                onChange={setNotes}
+                placeholder="Agenda or anything to prepare..."
+                rows={2}
+                disabled={submitting}
+              />
             </>
           )}
 
           {mode === 'reschedule' && (
-            <div className="space-y-1.5">
-              <Label htmlFor="meeting-reason">Reason (optional)</Label>
-              <Textarea
-                id="meeting-reason"
-                placeholder="Why is this being rescheduled..."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={2}
-                disabled={submitting}
-              />
-            </div>
+            <UnderlineTextarea
+              label="Reason (optional)"
+              value={reason}
+              onChange={setReason}
+              placeholder="Why is this being rescheduled..."
+              rows={2}
+              disabled={submitting}
+            />
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => handleOpenChange(false)} disabled={submitting}>
+        <DialogFooter className="flex-row items-center justify-between sm:justify-between gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => handleOpenChange(false)}
+            disabled={submitting}
+            className="text-[13px] font-semibold text-[#4a5d73] dark:text-[#94a3b8] hover:text-[#0a1628] dark:hover:text-white transition-colors disabled:opacity-40"
+          >
             Cancel
-          </Button>
-          <Button size="sm" onClick={handleSubmit} disabled={!isValid || submitting}>
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {mode === 'schedule' ? 'Schedule' : 'Reschedule'}
-          </Button>
+          </button>
+          <TravelingBorderButton
+            onClick={handleSubmit}
+            disabled={!isValid || submitting}
+            size="sm"
+            solid
+            showIcon={!submitting}
+            className="rounded-[10px] min-w-[148px]"
+          >
+            {submitting ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin inline-block" />
+                Saving…
+              </span>
+            ) : (
+              <span>{mode === 'schedule' ? 'Schedule Meeting' : 'Reschedule'}</span>
+            )}
+          </TravelingBorderButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

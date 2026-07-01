@@ -50,6 +50,9 @@ import {
   CalendarX2,
   CalendarCheck2,
   Link as LinkIcon,
+  IndianRupee,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 
 interface CaseDetails {
@@ -106,6 +109,27 @@ interface DocumentRequest {
   requested_at: string;
   fulfilled_at?: string;
 }
+
+interface PaymentRequest {
+  id: string | number;
+  category: string;
+  customTitle?: string | null;
+  title: string;
+  reason: string;
+  requestedAmount: number;
+  approvedAmount: number | null;
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'PAID';
+  rejectionReason?: string | null;
+  requestedByAgentName?: string;
+  createdAt: string;
+}
+
+const PAYMENT_REQUEST_STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  PENDING_APPROVAL: { label: 'Pending Approval', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  APPROVED:          { label: 'Approved',         cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  REJECTED:          { label: 'Rejected',         cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  PAID:              { label: 'Paid',             cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+};
 
 const STATUS_OPTIONS = [
   'NEW',
@@ -268,6 +292,7 @@ export default function AdminCaseDetailPage() {
   const [agreement, setAgreement] = useState<AgreementInfo | null>(null);
   const [agreementLoading, setAgreementLoading] = useState(false);
   const [uploadingAgreement, setUploadingAgreement] = useState(false);
+  const [generatingAgreement, setGeneratingAgreement] = useState(false);
 
   const fetchAgreement = async () => {
     setAgreementLoading(true);
@@ -298,6 +323,23 @@ export default function AdminCaseDetailPage() {
     }
   };
 
+  const handleGenerateAgreement = async () => {
+    setGeneratingAgreement(true);
+    try {
+      const res = await casesApi.generateAgreement(caseId);
+      if (res.success === false) {
+        toast.error(res.message || 'Failed to generate agreement');
+        return;
+      }
+      toast.success(res.message || 'Agreement generated');
+      await fetchAgreement();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate agreement');
+    } finally {
+      setGeneratingAgreement(false);
+    }
+  };
+
   const handleRemoveAgreement = async () => {
     try {
       const res = await casesApi.removeAgreement(caseId);
@@ -323,6 +365,77 @@ export default function AdminCaseDetailPage() {
       setViewerName(agreement?.originalFileName || 'Service Agreement.pdf');
     } catch (err: any) {
       toast.error(err.message || 'Agreement is temporarily unavailable.');
+    }
+  };
+
+  // ── Payment requests ─────────────────────────────────────────────────────────
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
+  const [paymentRequestsLoading, setPaymentRequestsLoading] = useState(false);
+  const [approveTarget, setApproveTarget] = useState<PaymentRequest | null>(null);
+  const [approveAmount, setApproveAmount] = useState('');
+  const [rejectTarget, setRejectTarget] = useState<PaymentRequest | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [reviewBusyId, setReviewBusyId] = useState<string | null>(null);
+
+  const fetchPaymentRequests = async () => {
+    setPaymentRequestsLoading(true);
+    try {
+      const res = await casesApi.getPaymentRequestsForAdmin(caseId);
+      if (res.success) setPaymentRequests(res.paymentRequests || []);
+    } catch (err: any) {
+      console.error('Failed to load payment requests:', err.message);
+    } finally {
+      setPaymentRequestsLoading(false);
+    }
+  };
+
+  const openApprove = (req: PaymentRequest) => {
+    setApproveTarget(req);
+    setApproveAmount(String(req.requestedAmount));
+  };
+
+  const handleApprove = async () => {
+    if (!approveTarget) return;
+    const amount = Number(approveAmount);
+    if (!amount || amount <= 0) { toast.error('Please enter a valid amount'); return; }
+    setReviewBusyId(String(approveTarget.id));
+    try {
+      const res = await casesApi.reviewPaymentRequest(caseId, String(approveTarget.id), { action: 'APPROVE', amount });
+      if (res.success) {
+        toast.success('Payment request approved');
+        setApproveTarget(null);
+        await Promise.all([fetchPaymentRequests(), fetchCaseDetails()]);
+      } else {
+        toast.error(res.message || 'Failed to approve');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to approve');
+    } finally {
+      setReviewBusyId(null);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+    if (!rejectionReason.trim()) { toast.error('Please provide a rejection reason'); return; }
+    setReviewBusyId(String(rejectTarget.id));
+    try {
+      const res = await casesApi.reviewPaymentRequest(caseId, String(rejectTarget.id), {
+        action: 'REJECT',
+        rejectionReason: rejectionReason.trim(),
+      });
+      if (res.success) {
+        toast.success('Payment request rejected');
+        setRejectTarget(null);
+        setRejectionReason('');
+        await Promise.all([fetchPaymentRequests(), fetchCaseDetails()]);
+      } else {
+        toast.error(res.message || 'Failed to reject');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to reject');
+    } finally {
+      setReviewBusyId(null);
     }
   };
 
@@ -360,6 +473,7 @@ export default function AdminCaseDetailPage() {
     fetchCaseDetails(true);
     fetchMeetings();
     fetchAgreement();
+    fetchPaymentRequests();
   }, [caseId]);
 
   // ── Fetch documents ─────────────────────────────────────────────────────────
@@ -772,10 +886,59 @@ export default function AdminCaseDetailPage() {
             agreement={agreement}
             loading={agreementLoading}
             canUpload={!!caseDetails.assignedAgentName}
+            generating={generatingAgreement}
+            onGenerate={handleGenerateAgreement}
             onUpload={handleUploadAgreement}
             onRemove={handleRemoveAgreement}
             onView={handleViewAgreement}
           />
+
+          {/* Payment Requests */}
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <SectionHeader icon={IndianRupee} title="Payment Requests" />
+            <div className="px-5 py-3">
+              {paymentRequestsLoading ? (
+                <div className="space-y-2 py-2"><Skeleton className="h-10 w-full" /></div>
+              ) : paymentRequests.length > 0 ? (
+                <div className="divide-y divide-border/50">
+                  {paymentRequests.map((pr) => (
+                    <div key={pr.id} className="flex items-start gap-3 py-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          <p className="text-sm font-medium text-foreground truncate">{pr.title} — ₹{pr.approvedAmount ?? pr.requestedAmount}</p>
+                          <span className={`${PILL} ${PAYMENT_REQUEST_STATUS_CFG[pr.status]?.cls ?? 'bg-muted text-muted-foreground'}`}>
+                            {PAYMENT_REQUEST_STATUS_CFG[pr.status]?.label ?? pr.status}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">{pr.reason}</p>
+                        <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                          Requested by {pr.requestedByAgentName || 'agent'} · {new Date(pr.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                        </p>
+                        {pr.status === 'REJECTED' && pr.rejectionReason && (
+                          <p className="text-[11px] text-destructive mt-1">Reason: {pr.rejectionReason}</p>
+                        )}
+                      </div>
+                      {pr.status === 'PENDING_APPROVAL' && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button size="sm" onClick={() => openApprove(pr)} disabled={reviewBusyId === String(pr.id)} className="gap-1.5">
+                            <CheckCircle2 className="h-3.5 w-3.5" />Approve
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setRejectTarget(pr)} disabled={reviewBusyId === String(pr.id)} className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10">
+                            <XCircle className="h-3.5 w-3.5" />Reject
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/50">
+                  <IndianRupee className="h-8 w-8 mb-2" />
+                  <p className="text-sm">No payment requests yet</p>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Documents */}
           <div className="bg-card border border-border rounded-none overflow-hidden">
@@ -1060,6 +1223,44 @@ export default function AdminCaseDetailPage() {
           onClose={() => { setViewerUrl(null); setViewerName(''); }}
         />
       )}
+
+      {/* Approve Payment Request — admin may edit the amount before approving */}
+      <Dialog open={!!approveTarget} onOpenChange={(open) => !open && setApproveTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" />Approve Payment Request</DialogTitle>
+            <DialogDescription>
+              Approving &quot;{approveTarget?.title}&quot; will notify the MSME and let them pay.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="case-approve-amount">Amount (₹) — editable</Label>
+            <Input id="case-approve-amount" type="number" min={1} step="0.01" value={approveAmount} onChange={(e) => setApproveAmount(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApproveTarget(null)}>Cancel</Button>
+            <Button onClick={handleApprove} disabled={reviewBusyId === String(approveTarget?.id)}>Approve</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Payment Request */}
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => !open && setRejectTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive"><XCircle className="h-5 w-5" />Reject Payment Request</DialogTitle>
+            <DialogDescription>The agent will be notified. The MSME will never see this request.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="case-reject-reason">Rejection Reason *</Label>
+            <Textarea id="case-reject-reason" placeholder="Please provide a reason for rejection…" value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} rows={3} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectionReason(''); }}>Cancel</Button>
+            <Button variant="destructive" onClick={handleReject} disabled={reviewBusyId === String(rejectTarget?.id)}>Reject Request</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

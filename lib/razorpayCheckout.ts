@@ -95,3 +95,68 @@ export async function payForService(opts: PayForServiceOptions): Promise<PayResu
     return { success: false, error: err instanceof Error ? err.message : 'Payment failed' };
   }
 }
+
+export interface PayCaseRequestOptions {
+  token: string;
+  requestId: string | number;
+  description?: string;
+  prefillName?: string;
+  prefillEmail?: string;
+  mobile?: string;
+}
+
+/**
+ * Pays an admin-approved case payment request (document/success/custom fee).
+ * Same checkout flow as payForService(), but the order is created against the
+ * specific request (its approved amount) rather than a fixed msme_pricing type.
+ */
+export async function payCaseRequest(opts: PayCaseRequestOptions): Promise<PayResult> {
+  try {
+    await loadRazorpay();
+
+    const orderRes = await fetch(`${API_BASE_URL}/api/payment/case-request/${opts.requestId}/create-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.token}` },
+    });
+    const order = await orderRes.json();
+    if (!order?.success) {
+      return { success: false, error: order?.message || 'Failed to create payment order' };
+    }
+
+    return await new Promise<PayResult>((resolve) => {
+      const rzp = new (window as any).Razorpay({
+        key: order.keyId,
+        amount: order.amount * 100,
+        currency: order.currency,
+        order_id: order.orderId,
+        name: 'Cred2Tech',
+        description: opts.description || 'Payment',
+        handler: async (response: any) => {
+          try {
+            const verifyRes = await fetch(`${API_BASE_URL}/api/payment/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.token}` },
+              body: JSON.stringify({
+                orderId: response.razorpay_order_id,
+                paymentId: response.razorpay_payment_id,
+                signature: response.razorpay_signature,
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            resolve(verifyData?.success
+              ? { success: true }
+              : { success: false, error: verifyData?.message || 'Payment verification failed' });
+          } catch {
+            resolve({ success: false, error: 'Payment verification failed' });
+          }
+        },
+        prefill: { name: opts.prefillName || '', email: opts.prefillEmail || '', contact: opts.mobile || '' },
+        theme: { color: '#6366f1' },
+        modal: { ondismiss: () => resolve({ success: false, cancelled: true }) },
+      });
+      rzp.open();
+    });
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Payment failed' };
+  }
+}

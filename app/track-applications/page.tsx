@@ -31,10 +31,15 @@ import {
   Eye,
   CalendarClock,
   FileSignature,
+  IndianRupee,
+  CreditCard,
+  CheckCircle2,
 } from 'lucide-react';
 import { formatMeetingDateTime } from '@/lib/meetingUtils';
 import { casesApi, API_BASE_URL } from '@/lib/services/api';
 import { DocumentViewer } from '@/components/ui/document-viewer';
+import { payCaseRequest } from '@/lib/razorpayCheckout';
+import { usePendingActions } from '@/contexts/PendingActionsContext';
 
 interface Case {
   id: string;
@@ -55,6 +60,21 @@ interface Case {
   updatedAt: string;
   nextMeetingAt?: string;
   agreementPendingSignature?: boolean;
+}
+
+interface CasePaymentRequest {
+  id: string | number;
+  caseId: string | number;
+  caseNumber: string;
+  schemeName?: string;
+  category: string;
+  customTitle?: string | null;
+  title: string;
+  reason: string;
+  requestedAmount: number;
+  approvedAmount: number | null;
+  status: 'APPROVED' | 'PAID';
+  createdAt: string;
 }
 
 interface DocumentRequest {
@@ -120,7 +140,8 @@ function PriorityPill({ priority }: { priority: string }) {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function TrackApplicationsPage() {
-  const { authStep, userId } = useMsmeAuth();
+  const { authStep, userId, token, userProfile, mobile } = useMsmeAuth();
+  const { refresh: refreshPendingActions } = usePendingActions();
   const router = useRouter();
 
   const [isLoading, setIsLoading]   = useState(true);
@@ -128,6 +149,10 @@ export default function TrackApplicationsPage() {
 
   const [docRequests, setDocRequests]   = useState<DocumentRequest[]>([]);
   const [reqsLoading, setReqsLoading]   = useState(false);
+
+  const [paymentRequests, setPaymentRequests] = useState<CasePaymentRequest[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [payingRequestId, setPayingRequestId] = useState<string | null>(null);
 
   const [uploadOpen, setUploadOpen]         = useState(false);
   const [activeRequest, setActiveRequest]   = useState<DocumentRequest | null>(null);
@@ -188,11 +213,47 @@ export default function TrackApplicationsPage() {
     }
   };
 
+  const fetchPaymentRequests = async (msmeUserId: number) => {
+    setPaymentsLoading(true);
+    try {
+      const res = await casesApi.getMsmePaymentRequestsAll(msmeUserId);
+      if (res.success) setPaymentRequests(res.paymentRequests || []);
+    } catch (err) {
+      console.error('Error fetching payment requests:', err);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+
+  const handlePayCaseRequest = async (req: CasePaymentRequest) => {
+    const authToken = token || (typeof window !== 'undefined' ? sessionStorage.getItem('msme_auth_token') : '') || '';
+    setPayingRequestId(String(req.id));
+    try {
+      const result = await payCaseRequest({
+        token: authToken,
+        requestId: req.id,
+        description: req.title,
+        prefillName: userProfile?.name,
+        prefillEmail: userProfile?.email,
+        mobile: mobile || undefined,
+      });
+      if (result.success) {
+        toast.success('Payment successful');
+        if (userId) await fetchPaymentRequests(parseInt(userId));
+        refreshPendingActions();
+      } else if (!result.cancelled) {
+        toast.error(result.error || 'Payment failed. Please try again.');
+      }
+    } finally {
+      setPayingRequestId(null);
+    }
+  };
+
   useEffect(() => {
     const load = async () => {
       const msmeUserId = userId ? parseInt(userId) : null;
       if (!msmeUserId) { setIsLoading(false); return; }
-      await Promise.all([fetchCases(msmeUserId), fetchDocumentRequests(msmeUserId)]);
+      await Promise.all([fetchCases(msmeUserId), fetchDocumentRequests(msmeUserId), fetchPaymentRequests(msmeUserId)]);
       setIsLoading(false);
     };
     if (authStep === 'authenticated') load();
@@ -209,6 +270,7 @@ export default function TrackApplicationsPage() {
       setActiveRequest(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       await fetchDocumentRequests(parseInt(userId));
+      refreshPendingActions();
     } catch (err: any) {
       toast.error(err.message || 'Upload failed. Please try again.');
     } finally {
@@ -252,6 +314,7 @@ export default function TrackApplicationsPage() {
   if (authStep !== 'authenticated') return null;
 
   const pendingRequests  = docRequests.filter((r) => r.status === 'PENDING');
+  const pendingPayments  = paymentRequests.filter((p) => p.status === 'APPROVED');
 
   // Active = everything not yet closed/rejected/docs-pending
   const ACTIVE_STATUSES = new Set(['NEW', 'ASSIGNED', 'IN_PROGRESS', 'UNDER_REVIEW', 'ESCALATED']);
@@ -334,6 +397,16 @@ export default function TrackApplicationsPage() {
               <p className="text-2xl font-bold text-orange-500">{pendingDocsCount}</p>
               <p className="text-xs text-muted-foreground">Awaiting upload</p>
             </div>
+            {pendingPayments.length > 0 && (
+              <>
+                <div className="w-px h-10 bg-border" />
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.06em] mb-0.5">Payments Due</p>
+                  <p className="text-2xl font-bold text-emerald-500">{pendingPayments.length}</p>
+                  <p className="text-xs text-muted-foreground">Awaiting payment</p>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -378,6 +451,7 @@ export default function TrackApplicationsPage() {
                   {cases.map((c) => {
                     const caseReqs    = docRequests.filter((r) => String(r.case_id) === String(c.id));
                     const casePending = caseReqs.filter((r) => r.status === 'PENDING');
+                    const casePaymentsDue = pendingPayments.filter((p) => String(p.caseId) === String(c.id));
                     const bizName     = c.msmeBusinessName || c.msmeName || '—';
 
                     return (
@@ -405,6 +479,12 @@ export default function TrackApplicationsPage() {
                             <span className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
                               <FileSignature className="h-2.5 w-2.5" />
                               Agreement: Signature pending
+                            </span>
+                          )}
+                          {casePaymentsDue.length > 0 && (
+                            <span className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded-full">
+                              <IndianRupee className="h-2.5 w-2.5" />
+                              Payment due — ₹{casePaymentsDue.reduce((sum, p) => sum + (p.approvedAmount ?? p.requestedAmount), 0)}
                             </span>
                           )}
                         </td>
@@ -449,6 +529,18 @@ export default function TrackApplicationsPage() {
                               >
                                 <Upload className="h-3 w-3" />
                                 Upload
+                              </button>
+                            )}
+                            {casePaymentsDue.length > 0 && (
+                              <button
+                                onClick={() => handlePayCaseRequest(casePaymentsDue[0])}
+                                disabled={payingRequestId === String(casePaymentsDue[0].id)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-emerald-400/50 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors disabled:opacity-50"
+                              >
+                                {payingRequestId === String(casePaymentsDue[0].id)
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <CreditCard className="h-3 w-3" />}
+                                Pay Now
                               </button>
                             )}
                             {c.status === 'NEW' && (
@@ -571,6 +663,95 @@ export default function TrackApplicationsPage() {
                           >
                             <Eye className="h-3 w-3" />
                             View File
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Payment Requests Table ───────────────────────────────────────── */}
+        {paymentRequests.length > 0 && (
+          <div className="bg-card border border-border rounded-none overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-[15px] font-semibold text-foreground flex items-center gap-2">
+                  <IndianRupee className="h-4 w-4" />
+                  Payment Requests
+                  {pendingPayments.length > 0 && (
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-full">
+                      {pendingPayments.length} pending
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Payments approved by admin for your assigned agent's requests</p>
+              </div>
+              <button
+                disabled={paymentsLoading}
+                onClick={() => userId && fetchPaymentRequests(parseInt(userId))}
+                className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${paymentsLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+
+            <div className="overflow-auto">
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                <thead>
+                  <tr className="bg-background border-b-2 border-border">
+                    {['Payment', 'Case #', 'Amount', 'Status', 'Action'].map((h) => (
+                      <th
+                        key={h}
+                        className="px-5 py-3 text-left text-[10px] font-extrabold text-muted-foreground uppercase tracking-[0.1em]"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentRequests.map((req) => (
+                    <tr key={req.id} className="border-b border-border hover:bg-muted/10 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm font-medium text-foreground">{req.title}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-[220px]">{req.reason}</p>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm font-mono text-foreground">{req.caseNumber || '—'}</p>
+                        {req.schemeName && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{req.schemeName}</p>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm font-semibold text-foreground">₹{req.approvedAmount ?? req.requestedAmount}</p>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {req.status === 'PAID' ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                            <CheckCircle2 className="h-3 w-3" />Paid
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                            Approved
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {req.status === 'APPROVED' && (
+                          <button
+                            onClick={() => handlePayCaseRequest(req)}
+                            disabled={payingRequestId === String(req.id)}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors disabled:opacity-50"
+                          >
+                            {payingRequestId === String(req.id)
+                              ? <Loader2 className="h-3 w-3 animate-spin" />
+                              : <CreditCard className="h-3 w-3" />}
+                            Pay Now
                           </button>
                         )}
                       </td>
