@@ -324,11 +324,16 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
     setError(null);
     try {
-      // Call backend verify-otp endpoint
+      // Call backend verify-otp endpoint. credentials:'include' is required
+      // here — this app's origin (scheme.cred2tech.com) and the API's
+      // (a different subdomain) make this a cross-origin request, and
+      // without credentials the browser silently drops the c2t_sso
+      // Set-Cookie this response carries, breaking SSO on app.cred2tech.com.
       const response = await fetch(`${API_BASE_URL}/api/msme-auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mobile: mobile, otp }),
+        credentials: 'include',
       });
 
       const data = await response.json();
