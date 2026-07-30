@@ -213,14 +213,47 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     const savedUserId = sessionStorage.getItem('msme_user_id');
 
     if (!savedToken || !savedMobile) {
-      // Not logged in yet — but if an OTP was just sent, restore that pending
-      // mobile so a refresh on the OTP page resumes instead of dropping to landing.
-      const pendingMobile = sessionStorage.getItem('msme_pending_mobile');
-      if (pendingMobile) {
-        setMobileState(pendingMobile);
-        setAuthStep('otp');
-      }
-      setIsInitialized(true);
+      // No local session — check whether the user was recently authenticated
+      // on app.cred2tech.com and can be silently signed in here too, via the
+      // shared c2t_sso cookie (credentials:'include' is required to actually
+      // send it — every other call in this file is a bearer token and
+      // doesn't need it). A 401 here is the normal/expected case, not an
+      // error, and just falls through to the pending-mobile/landing logic.
+      (async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/msme-auth/sso-check`, {
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.success && data.token) {
+              sessionStorage.setItem('msme_auth_token', data.token);
+              sessionStorage.setItem('msme_mobile', data.mobile || '');
+              sessionStorage.setItem('msme_user_id', data.userId);
+              setToken(data.token);
+              setUserId(data.userId);
+              setMobileState(data.mobile || '');
+
+              const stage = await resolveStage();
+              setAuthStep(stage ? stageToAuthStep(stage) : 'landing');
+              setIsInitialized(true);
+              return;
+            }
+          }
+        } catch {
+          /* SSO check failed — fall through to the normal landing/otp flow below */
+        }
+
+        // Not cross-logged-in — but if an OTP was just sent, restore that
+        // pending mobile so a refresh on the OTP page resumes instead of
+        // dropping to landing.
+        const pendingMobile = sessionStorage.getItem('msme_pending_mobile');
+        if (pendingMobile) {
+          setMobileState(pendingMobile);
+          setAuthStep('otp');
+        }
+        setIsInitialized(true);
+      })();
       return;
     }
 
@@ -709,6 +742,7 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     setBusinesses([]);
     setActiveBusinessId(null);
     setPendingBusinessId(null);
+    fetch(`${API_BASE_URL}/api/msme-auth/sso-logout`, { method: 'POST', credentials: 'include' }).catch(() => {}); // best-effort — don't block local logout on it
     router.push('/');
   };
 
