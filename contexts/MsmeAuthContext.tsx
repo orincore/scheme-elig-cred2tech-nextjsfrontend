@@ -731,6 +731,20 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
+    // Captured before sessionStorage is cleared below, and fired before we
+    // navigate away — this is what actually revokes the session server-side
+    // (and propagates the logout to app.cred2tech.com) rather than just
+    // tidying up the bootstrap cookie. Without it, a stolen/lingering token
+    // would keep working on both apps until its natural 7-day expiry.
+    const authToken = token || sessionStorage.getItem('msme_auth_token');
+    if (authToken) {
+      fetch(`${API_BASE_URL}/api/msme-auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      }).catch(() => {});
+    }
+    fetch(`${API_BASE_URL}/api/msme-auth/sso-logout`, { method: 'POST', credentials: 'include' }).catch(() => {}); // best-effort — don't block local logout on it
+
     setToken(null);
     setMobileState(null);
     setUserId(null);
@@ -747,7 +761,6 @@ export const MsmeAuthProvider = ({ children }: { children: ReactNode }) => {
     setBusinesses([]);
     setActiveBusinessId(null);
     setPendingBusinessId(null);
-    fetch(`${API_BASE_URL}/api/msme-auth/sso-logout`, { method: 'POST', credentials: 'include' }).catch(() => {}); // best-effort — don't block local logout on it
     router.push('/');
   };
 
