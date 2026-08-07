@@ -221,15 +221,18 @@ function yearFrom(value: any): string | undefined {
 
 /** Map for reading an existing value out of a fetched profile (so we prefill). */
 export const IDENTITY_SOURCE_MAP: Record<string, (p: Record<string, any>) => any> = {
-  // Default the legal name to the PAN holder's name (proprietor) when no
-  // GST-derived business name exists.
-  legalNameOfBusiness: (p) => p.legalNameOfBusiness || p.legal_name_of_business || p.personalName || p.personal_name,
+  // Default the legal name to whatever app.cred2tech.com already has for this
+  // mobile (synced on cross-login — see syncedBusinessName), then the PAN
+  // holder's own name, before finally leaving it blank for manual entry.
+  legalNameOfBusiness: (p) => p.legalNameOfBusiness || p.legal_name_of_business || p.syncedBusinessName || p.synced_business_name || p.personalName || p.personal_name,
   tradeNameOfBusiness: (p) => p.tradeNameOfBusiness || p.trade_name_of_business,
   principalAddress:    (p) => p.principalAddress || p.principal_address,
   principalCity:       (p) => p.principalCity || p.principal_city,
   principalDistrict:   (p) => p.principalDistrict || p.principal_district,
   principalState:      (p) => p.principalState || p.principal_state || p.state,
-  principalPincode:    (p) => p.principalPincode || p.principal_pincode,
+  // Same cross-login fallback as legalNameOfBusiness above, before the
+  // GST-verified principal_pincode is available.
+  principalPincode:    (p) => p.principalPincode || p.principal_pincode || p.syncedPincode || p.synced_pincode,
   // Year established defaults to the year from the registration date, else from
   // the PAN holder's date of birth (per product requirement) — editable.
   establishmentYear:   (p) =>
