@@ -21,8 +21,19 @@ import {
 } from '@/lib/eligibilityFields';
 import { toast } from 'sonner';
 import { Loader2, ClipboardList } from 'lucide-react';
+import { consentApi } from '@/lib/services/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+
+// Same wording as PanVerificationPage's consent gate — kept identical since
+// both are the same CICRA consent purpose (CREDIT_DATA_COLLECTION), just
+// captured at different points in onboarding.
+const CONSENT_TEXT =
+  'I authorize Cred2Tech to collect, verify and process my business and credit ' +
+  'information for the purpose of assessing my eligibility for financial schemes. ' +
+  'I understand this consent is valid for 180 days, after which my credit ' +
+  'information will be purged unless I renew consent, and that I may withdraw it ' +
+  'at any time.';
 
 /**
  * Dedicated, full-page profile onboarding (its own route) that collects every
@@ -38,6 +49,14 @@ export default function ProfileOnboardingPage() {
   const [identityValues, setIdentityValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // Consent (CICRA) is normally captured on the PAN page's checkbox. A
+  // borrower whose PAN/GST was auto-provisioned from the sibling app
+  // (app.cred2tech.com) skips that page entirely and so has never actually
+  // agreed to this app's own consent text — profile/eligibility is gated on
+  // it, so without this gate the save silently 403s. Only shown when this
+  // app doesn't already have a valid consent on file for them.
+  const [needsConsent, setNeedsConsent] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
 
   // Work out which fields are still missing for this business.
   useEffect(() => {
@@ -46,9 +65,14 @@ export default function ProfileOnboardingPage() {
     if (!authToken || !mobileNumber) return;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobileNumber}`, {
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
+        const [res, consentStatus] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobileNumber}`, {
+            headers: { Authorization: `Bearer ${authToken}` },
+          }),
+          consentApi.getStatus().catch(() => null),
+        ]);
+        const consentStillNeeded = !consentStatus?.hasConsent;
+        setNeedsConsent(consentStillNeeded);
         const data = await res.json();
         const profile = data?.user || {};
         const missing = getMissingFields(profile);
@@ -73,8 +97,8 @@ export default function ProfileOnboardingPage() {
           }
         }
 
-        if (missing.length === 0 && identity.length === 0) {
-          // Nothing to ask — go straight to the dashboard.
+        if (missing.length === 0 && identity.length === 0 && !consentStillNeeded) {
+          // Nothing to ask, and consent's already on file — go straight to the dashboard.
           continueToDashboard();
           return;
         }
@@ -95,8 +119,9 @@ export default function ProfileOnboardingPage() {
     () =>
       fields.every((f) => (values[f.key] ?? '').toString().trim() !== '') &&
       identityFields.every((f) => f.optional || (identityValues[f.key] ?? '').toString().trim() !== '') &&
-      (fields.length > 0 || identityFields.length > 0),
-    [fields, values, identityFields, identityValues],
+      (fields.length > 0 || identityFields.length > 0 || needsConsent) &&
+      (!needsConsent || consentChecked),
+    [fields, values, identityFields, identityValues, needsConsent, consentChecked],
   );
 
   const handleChange = (key: string, value: string) =>
@@ -143,8 +168,24 @@ export default function ProfileOnboardingPage() {
       );
       return;
     }
+    if (needsConsent && !consentChecked) {
+      toast.error('Please provide consent to collect your credit information before continuing.');
+      return;
+    }
     setSubmitting(true);
     try {
+      // Record consent BEFORE saving anything that touches credit information —
+      // profile/eligibility is gated on it (CICRA). Only reached when this app
+      // doesn't already have a valid consent on file (e.g. PAN/GST arrived via
+      // the sibling app, so the PAN page's own checkbox was never shown here).
+      if (needsConsent) {
+        const consentRes = await consentApi.grant(CONSENT_TEXT);
+        if (!consentRes?.success) {
+          toast.error('Could not record your consent. Please try again.');
+          setSubmitting(false);
+          return;
+        }
+      }
       const authToken = token || sessionStorage.getItem('msme_auth_token');
       const dbPayload = {
         ...buildEligibilityDbPayload(values),
@@ -194,6 +235,24 @@ export default function ProfileOnboardingPage() {
         </div>
       ) : (
         <form onSubmit={handleSubmit}>
+          {/* CICRA consent gate — only shown when this app has no valid consent
+              on file yet (e.g. PAN/GST arrived via app.cred2tech.com, so the
+              PAN page's own checkbox was skipped). */}
+          {needsConsent && (
+            <label className="mb-8 flex items-start gap-3 rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/40 dark:bg-indigo-950/20 px-4 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => setConsentChecked(e.target.checked)}
+                disabled={submitting}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-600 cursor-pointer"
+              />
+              <span className="text-[12.5px] leading-snug text-[#4a5d73] dark:text-[#94a3b8]">
+                {CONSENT_TEXT}
+              </span>
+            </label>
+          )}
+
           {/* Business identity / address — only for no-GSTIN profiles */}
           {identityFields.length > 0 && (
             <div className="mb-8">
