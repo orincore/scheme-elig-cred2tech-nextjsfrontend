@@ -60,15 +60,18 @@ function formatDate(dateStr: string | null): string {
 }
 
 export default function TransactionsPage() {
-  const { authStep } = useMsmeAuth();
+  const { isInitialized, authStep } = useMsmeAuth();
   const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Wait for session restore to finish — otherwise a direct URL load can
+    // redirect an already-logged-in user before the token has been restored.
+    if (!isInitialized) return;
     const token = sessionStorage.getItem('msme_auth_token');
     if (!token && authStep !== 'authenticated') router.push('/');
-  }, [authStep, router]);
+  }, [isInitialized, authStep, router]);
 
   useEffect(() => {
     if (authStep !== 'authenticated') return;

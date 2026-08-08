@@ -10,7 +10,7 @@ import { Scheme } from '@/contexts/SchemesContext';
 import { Button } from '@/components/ui/button';
 
 export default function SchemePage() {
-  const { authStep } = useMsmeAuth();
+  const { isInitialized, authStep } = useMsmeAuth();
   const { getSchemeById, fetchSchemeBySlug } = useSchemes();
   const router = useRouter();
   const params = useParams();
@@ -21,12 +21,14 @@ export default function SchemePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if user is authenticated via sessionStorage
+    // Wait for session restore to finish — otherwise a direct URL load can
+    // redirect an already-logged-in user before the token has been restored.
+    if (!isInitialized) return;
     const token = sessionStorage.getItem('msme_auth_token');
     if (!token && authStep !== 'authenticated') {
       router.push('/');
     }
-  }, [authStep, router]);
+  }, [isInitialized, authStep, router]);
 
   useEffect(() => {
     if (!scheme && schemeSlug && !fetching && !error) {

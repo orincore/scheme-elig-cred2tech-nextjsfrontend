@@ -10,14 +10,17 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function SavedSchemesPage() {
-  const { authStep } = useMsmeAuth();
+  const { isInitialized, authStep } = useMsmeAuth();
   const { getSavedSchemes, savedSchemes } = useSchemes();
   const router = useRouter();
 
   useEffect(() => {
+    // Wait for session restore to finish — otherwise a direct URL load can
+    // redirect an already-logged-in user before the token has been restored.
+    if (!isInitialized) return;
     const token = sessionStorage.getItem('msme_auth_token');
     if (!token && authStep !== 'authenticated') router.push('/');
-  }, [authStep, router]);
+  }, [isInitialized, authStep, router]);
 
   useEffect(() => {
     if (authStep === 'authenticated') getSavedSchemes();

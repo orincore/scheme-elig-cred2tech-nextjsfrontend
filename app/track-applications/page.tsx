@@ -140,7 +140,7 @@ function PriorityPill({ priority }: { priority: string }) {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function TrackApplicationsPage() {
-  const { authStep, userId, token, userProfile, mobile } = useMsmeAuth();
+  const { isInitialized, authStep, userId, token, userProfile, mobile } = useMsmeAuth();
   const { refresh: refreshPendingActions } = usePendingActions();
   const router = useRouter();
 
@@ -188,9 +188,14 @@ export default function TrackApplicationsPage() {
   };
 
   useEffect(() => {
+    // Wait for MsmeAuthContext's own session restore (SSO bootstrap /
+    // sessionStorage read) to finish before deciding — on a direct URL load
+    // this effect can otherwise fire before that async restore completes,
+    // see no token yet, and bounce an already-logged-in user to login.
+    if (!isInitialized) return;
     const token = sessionStorage.getItem('msme_auth_token');
     if (!token && authStep !== 'authenticated') router.push('/');
-  }, [authStep, router]);
+  }, [isInitialized, authStep, router]);
 
   const fetchCases = async (msmeUserId: number) => {
     try {
