@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { MsmeAuthBrand } from '@/components/auth/msme-auth-brand';
@@ -27,7 +27,7 @@ import {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
 export default function PanVerificationPage() {
-  const { setPanAndProfile, userId, isLoading, error, pendingBusinessId, businesses } = useMsmeAuth();
+  const { setPanAndProfile, userId, isLoading, error, pendingBusinessId, businesses, token, mobile } = useMsmeAuth();
   // isAddingAnother: user already has at least one business, so this is an additional one.
   // No longer relies on pendingBusinessId since we don't pre-create the row.
   const isAddingAnother = (businesses?.filter(b => b.panVerified)?.length || 0) > 0;
@@ -54,6 +54,36 @@ export default function PanVerificationPage() {
   // Set when the PAN already exists on a DIFFERENT profile — we ask the user to
   // confirm before adding it to this account.
   const [duplicatePrompt, setDuplicatePrompt] = useState<string | null>(null);
+
+  // Prefill from whatever app.cred2tech.com already knows about this mobile
+  // (pushed via ssoProfileSync into msme_users.pan_number/personal_name/email —
+  // see getProfile) so a borrower who already entered their PAN over there
+  // doesn't have to retype it here. Only pre-fills the field; verification
+  // still requires an explicit click, same consent/billing flow as always.
+  // Never applies when adding an additional business — that intentionally
+  // uses a different PAN.
+  useEffect(() => {
+    if (isAddingAnother || !token || !mobile) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/msme-auth/profile/${mobile}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const u = data?.user;
+        if (!u || cancelled) return;
+        if (u.panNumber) setPan(String(u.panNumber).toUpperCase().slice(0, 10));
+        if (u.personalName) setPersonalName(u.personalName);
+        if (u.email) setEmail(u.email);
+      } catch {
+        // Best-effort prefill only — the user can still type it manually.
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAddingAnother, token, mobile]);
 
   const handlePanVerify = async (confirmDuplicatePan = false) => {
     if (!pan || pan.length !== 10) {

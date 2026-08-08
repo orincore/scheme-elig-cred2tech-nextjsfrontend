@@ -20,6 +20,8 @@ import {
   X,
   ChevronUp,
   ReceiptText,
+  Landmark,
+  ExternalLink,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -28,6 +30,7 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   exact?: boolean;
+  external?: boolean;
 }
 
 const NAV: NavItem[] = [
@@ -37,6 +40,11 @@ const NAV: NavItem[] = [
   { href: '/transactions', label: 'Transactions', icon: ReceiptText },
   { href: '/profile', label: 'Profile', icon: User },
 ];
+
+// Loan eligibility portal is a separate app/domain (own auth) — link out
+// rather than route internally.
+const LOAN_CASES_URL = 'https://app.cred2tech.com/msme/cases';
+const EXTERNAL_NAV: NavItem = { href: LOAN_CASES_URL, label: 'View Loan Cases', icon: Landmark, external: true };
 
 function initialsOf(name?: string | null) {
   if (!name) return 'U';
@@ -200,6 +208,16 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
             </Link>
           );
         })}
+        <a
+          href={EXTERNAL_NAV.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+        >
+          <EXTERNAL_NAV.icon className="size-[18px] shrink-0" />
+          <span className="flex-1">{EXTERNAL_NAV.label}</span>
+          <ExternalLink className="size-3.5 shrink-0 opacity-60" />
+        </a>
       </nav>
 
       {/* User card */}
