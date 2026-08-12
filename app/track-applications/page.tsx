@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import {
   Dialog,
   DialogContent,
@@ -338,7 +339,22 @@ export default function TrackApplicationsPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  if (authStep !== 'authenticated') return null;
+  // Not authenticated yet — either the redirect effect above is still
+  // resolving where this session actually stands (a few sequential API
+  // calls against a remote DB, can take several seconds) or it's about to
+  // navigate away. Either way, a blank screen here reads as broken/stuck;
+  // show a spinner instead. Deliberately not wrapped in DashboardLayout —
+  // that assumes an authenticated user context this state doesn't have yet.
+  if (authStep !== 'authenticated') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <Spinner className="size-6" />
+          <p className="text-sm">Loading your account…</p>
+        </div>
+      </div>
+    );
+  }
 
   const pendingRequests  = docRequests.filter((r) => r.status === 'PENDING');
   const pendingPayments  = paymentRequests.filter((p) => p.status === 'APPROVED');

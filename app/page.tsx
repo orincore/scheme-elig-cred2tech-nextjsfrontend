@@ -6,6 +6,7 @@ import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { useAgentAuth } from '@/contexts/AgentAuthContext';
 import { useRouter } from 'next/navigation';
 import LoginPage from '@/components/auth/LoginPage';
+import { Spinner } from '@/components/ui/spinner';
 
 export default function Home() {
   const { isInitialized, authStep, resolveStage } = useMsmeAuth();
@@ -56,7 +57,20 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [isInitialized, authStep, isAdminAuthenticated, isAgentAuthenticated, router]);
 
-  if (!showLogin) return <main className="min-h-screen bg-background" />;
+  // resolveStage() during the effect above is 2-3 sequential API round-trips
+  // (businesses, then profile) against a remote DB — this can take several
+  // seconds. This used to render a totally blank <main> for that whole
+  // window, which reads as a stuck/broken page rather than "still loading".
+  if (!showLogin) {
+    return (
+      <main className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <Spinner className="size-6" />
+          <p className="text-sm">Setting things up…</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background">
