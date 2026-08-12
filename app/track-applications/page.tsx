@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useMsmeAuth } from '@/contexts/MsmeAuthContext';
+import { useMsmeAuth, ONBOARDING_ROUTES } from '@/contexts/MsmeAuthContext';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -140,7 +140,7 @@ function PriorityPill({ priority }: { priority: string }) {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function TrackApplicationsPage() {
-  const { isInitialized, authStep, userId, token, userProfile, mobile } = useMsmeAuth();
+  const { isInitialized, authStep, userId, token, userProfile, mobile, resolveStage } = useMsmeAuth();
   const { refresh: refreshPendingActions } = usePendingActions();
   const router = useRouter();
 
@@ -193,9 +193,31 @@ export default function TrackApplicationsPage() {
     // this effect can otherwise fire before that async restore completes,
     // see no token yet, and bounce an already-logged-in user to login.
     if (!isInitialized) return;
-    const token = sessionStorage.getItem('msme_auth_token');
-    if (!token && authStep !== 'authenticated') router.push('/');
-  }, [isInitialized, authStep, router]);
+    const localToken = sessionStorage.getItem('msme_auth_token');
+    if (!localToken) {
+      if (authStep !== 'authenticated') router.push('/');
+      return;
+    }
+    // Logged in (including via the app.cred2tech.com SSO bootstrap) but
+    // onboarding isn't finished on this app yet — this used to fall through
+    // to `authStep !== 'authenticated' ? return null` below with no way
+    // out, i.e. a permanently blank page instead of sending the user to
+    // finish the step they're actually stuck on. Mirrors the same
+    // resolveStage()-driven routing app/page.tsx already uses.
+    if (authStep !== 'authenticated') {
+      let cancelled = false;
+      (async () => {
+        const stage = await resolveStage();
+        if (cancelled) return;
+        router.push(
+          stage === 'profile' ? ONBOARDING_ROUTES.profile
+            : stage === 'pan' ? ONBOARDING_ROUTES.pan
+            : ONBOARDING_ROUTES.landing,
+        );
+      })();
+      return () => { cancelled = true; };
+    }
+  }, [isInitialized, authStep, router, resolveStage]);
 
   const fetchCases = async (msmeUserId: number) => {
     try {
