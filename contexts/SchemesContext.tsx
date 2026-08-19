@@ -357,13 +357,27 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
     setCurrentPage(1);
   };
 
-  // Push the in-memory buckets into React state (sorted: high-confidence first for eligible).
+  // Push the in-memory buckets into React state (sorted: the user's own
+  // industry first, generic/applies-to-all-industries schemes last — engine
+  // `relevanceTier` (0=industry match, 1=other-sector, 2=general,
+  // 3=personal-finance) — then high-confidence first within a tier).
   const syncBuckets = () => {
-    let elig = Array.from(eligibleMapRef.current.values()).sort(
-      (a, b) => (b.decision.confidence === 'high' ? 1 : 0) - (a.decision.confidence === 'high' ? 1 : 0),
-    );
-    let inel = Array.from(ineligibleMapRef.current.values());
-    let actionable = Array.from(actionableMapRef.current.values());
+    let elig = Array.from(eligibleMapRef.current.values()).sort((a, b) => {
+      const tierA = a.scheme?.relevanceTier ?? 2;
+      const tierB = b.scheme?.relevanceTier ?? 2;
+      if (tierA !== tierB) return tierA - tierB;
+      return (b.decision.confidence === 'high' ? 1 : 0) - (a.decision.confidence === 'high' ? 1 : 0);
+    });
+    // WS events can arrive out of engine-processing order (parallel Stage-2
+    // batches), so sort explicitly rather than relying on arrival order.
+    const byTierThenRelevance = (a: SchemeDecisionItem, b: SchemeDecisionItem) => {
+      const tierA = a.scheme?.relevanceTier ?? 2;
+      const tierB = b.scheme?.relevanceTier ?? 2;
+      if (tierA !== tierB) return tierA - tierB;
+      return (b.scheme?.relevanceScore ?? 0) - (a.scheme?.relevanceScore ?? 0);
+    };
+    let inel = Array.from(ineligibleMapRef.current.values()).sort(byTierThenRelevance);
+    let actionable = Array.from(actionableMapRef.current.values()).sort(byTierThenRelevance);
 
     // ── Needs-info tab = the questionnaire view ─────────────────────────────
     // Built from EVERY bucket, not just needs-info: it keeps both the schemes
