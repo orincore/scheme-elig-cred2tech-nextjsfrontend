@@ -522,6 +522,9 @@ export default function EligibilityDashboard() {
                 ? `Scanned ${Math.min(analysisProgress.checked, analysisProgress.total)} of ${analysisProgress.total} shortlisted schemes`
                 : 'Shortlisting schemes…'}
             </p>
+            <p className="text-xs text-muted-foreground/80 mt-1">
+              A full, accurate scan can take a few minutes — we deliberately pace requests to keep results precise rather than rushing them.
+            </p>
           </div>
         </Card>
       )}

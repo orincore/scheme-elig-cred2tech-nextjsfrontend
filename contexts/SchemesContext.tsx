@@ -527,8 +527,17 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
           break;
         }
         case 'progress': {
-          const checked = (msg.stage1_rejected || 0) + (msg.stage2_eligible || 0) +
-            (msg.stage2_ineligible || 0) + (msg.cache_hits || 0);
+          // Every scheme that has a final verdict — whether it came from the
+          // decision cache, a Stage-1 reject, or a full Stage-2 verify — is
+          // already bucketed into exactly one of these four by the engine's
+          // own bucketDecision(), so summing them is the one correct "how
+          // many have we resolved so far" count. (The previous version read
+          // `stage2_eligible`/`stage2_ineligible`, fields the engine has
+          // never emitted — always 0 — so this froze at whatever Stage 1
+          // alone produced and never moved again during the Stage-2 phase,
+          // which is most of a scan's wall-clock time.)
+          const checked = (msg.eligible || 0) + (msg.ineligible || 0) +
+            (msg.needs_info || 0) + (msg.actionable || 0);
           progressRef.current = {
             ...progressRef.current,
             checked: Number.isFinite(checked) ? checked : progressRef.current.checked,
@@ -799,7 +808,19 @@ export const SchemesProvider = ({ children }: { children: ReactNode }) => {
     (d.needsInfo || []).forEach((i: SchemeDecisionItem) => i?.scheme?.slug && routeDecision(i.scheme, i.decision));
     (d.ineligible || []).forEach((i: SchemeDecisionItem) => i?.scheme?.slug && routeDecision(i.scheme, i.decision));
     (d.actionable || []).forEach((i: SchemeDecisionItem) => i?.scheme?.slug && routeDecision(i.scheme, i.decision));
-    progressRef.current = d.progress || { checked: 0, total: 0, eligible: eligibleMapRef.current.size };
+    // Always presented as 'complete' below, so progress should always read as
+    // 100% here — derive it from what was JUST restored (self-healing, even
+    // for a snapshot saved before the live progress-counting bug fix, rather
+    // than trusting a possibly-stale/zeroed persisted `d.progress` blob,
+    // which is what made a first-time (live) scan and a returning user's
+    // restored view show different, inconsistent progress state).
+    const restoredChecked = eligibleMapRef.current.size + needsInfoMapRef.current.size +
+      ineligibleMapRef.current.size + actionableMapRef.current.size;
+    progressRef.current = {
+      checked: restoredChecked,
+      total: d.progress?.total && d.progress.total >= restoredChecked ? d.progress.total : restoredChecked,
+      eligible: eligibleMapRef.current.size,
+    };
     syncBuckets(); // recomputes the question popup from the restored needs-info bucket
     setSessionId(snapshot.sessionId || null);
     setLastUpdated(snapshot.updatedAt || null);
