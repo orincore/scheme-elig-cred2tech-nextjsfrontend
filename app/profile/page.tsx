@@ -328,7 +328,19 @@ export default function ProfilePage() {
     try {
       const res  = await fetch(`${API_BASE_URL}/api/msme-auth/delete/${userId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
       const data = await res.json();
-      if (data.success) { toast.success('Account deleted'); logout(); router.push('/'); }
+      if (data.success) {
+        toast.success('Account deleted');
+        // logout() alone only removes a handful of named sessionStorage keys —
+        // it leaves the eligibility session/answers (SchemesContext's
+        // msme_elig_session / msme_elig_answered) and any localStorage (e.g.
+        // applied_scheme_<id>) behind. In the same browser tab, re-logging in
+        // (same or different mobile) would then pick those up and show the
+        // deleted account's dashboard/eligibility state. Wipe everything on a
+        // real account deletion, same as the onboarding "abandon" flow does.
+        try { localStorage.clear(); sessionStorage.clear(); } catch { /* storage may be unavailable */ }
+        logout();
+        router.push('/');
+      }
       else throw new Error(data.message || 'Failed to delete account');
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to delete account'); }
     finally { setIsDeleting(false); }
